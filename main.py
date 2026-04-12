@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Main Training Script
 =========================================
-Optimized: determines best causal measure on fixed split, then reuses it for shrinking windows.
+Optimized: determines best causal measure on fixed split, then forces 'pwling' for shrinking windows.
 """
 
 import pandas as pd
@@ -56,7 +56,6 @@ def determine_best_measure_fixed(universe: str, use_bootstrap: bool = True):
             causal_discovery = EquityCausalDiscovery()
             leader_identifier = EquityLeaderIdentifier()
 
-        # Set measure in the LingamEngine
         causal_discovery.lingam.config['measure'] = measure
 
         data = causal_discovery.prepare_data(train, val)
@@ -90,7 +89,6 @@ def determine_best_measure_fixed(universe: str, use_bootstrap: bool = True):
             print(f"  Leader {leader_ticker} not in returns")
 
     if best_result is None:
-        # Fallback: use first measure
         print("WARNING: No measure produced a valid leader. Using first measure as fallback.")
         best_measure = config.CAUSAL_MEASURES[0]
         causal_discovery = FICausalDiscovery() if universe == 'fi_commodity' else EquityCausalDiscovery()
@@ -130,7 +128,6 @@ def run_fixed_split_training_from_best(universe: str, best_measure: str, best_re
     test = best_result['test']
     returns = best_result['returns']
 
-    # Compute full metrics for the best leader
     metrics = {}
     if leader_ticker in returns.columns:
         test_returns = test[leader_ticker].dropna()
@@ -144,7 +141,6 @@ def run_fixed_split_training_from_best(universe: str, best_measure: str, best_re
                 'best_day': full_metrics.get('best_day', 0.0),
             }
 
-    # Build signals
     signals = {
         'primary_signal': {'ticker': leader_ticker, 'ann_return': ann_return},
         'confidence': causal_results.get('leader_score', 0.0),
@@ -168,10 +164,11 @@ def run_fixed_split_training_from_best(universe: str, best_measure: str, best_re
     }
 
 
-def run_shrinking_window_training_with_measure(universe: str, measure: str):
+def run_shrinking_window_training(universe: str):
     """
-    Run shrinking window training using a specific causal measure.
+    Run shrinking window training ALWAYS using 'pwling' measure for speed.
     """
+    measure = "pwling"   # force pwling
     print(f"\n{'='*60}")
     print(f"Running SHRINKING WINDOW training for {universe} using measure: {measure}")
     print(f"{'='*60}\n")
@@ -287,28 +284,24 @@ def main():
 
     results = {}
 
-    # Determine best measure per universe using fixed split
+    # Determine best measure per universe using fixed split (only if fixed split is requested)
     best_measures = {}
-    if args.universe in ['fi_commodity', 'all']:
-        if args.mode in ['fixed', 'both']:
+    if args.mode in ['fixed', 'both']:
+        if args.universe in ['fi_commodity', 'all']:
             best_measure, best_fixed_result = determine_best_measure_fixed('fi_commodity', args.bootstrap)
             best_measures['fi_commodity'] = best_measure
             results['fi_commodity_fixed'] = run_fixed_split_training_from_best('fi_commodity', best_measure, best_fixed_result)
-
-    if args.universe in ['equity', 'all']:
-        if args.mode in ['fixed', 'both']:
+        if args.universe in ['equity', 'all']:
             best_measure, best_fixed_result = determine_best_measure_fixed('equity', args.bootstrap)
             best_measures['equity'] = best_measure
             results['equity_fixed'] = run_fixed_split_training_from_best('equity', best_measure, best_fixed_result)
 
-    # Now run shrinking window using the best measure from each universe
+    # Shrinking window always uses pwling (no measure selection)
     if args.mode in ['shrinking', 'both']:
         if args.universe in ['fi_commodity', 'all']:
-            measure = best_measures.get('fi_commodity', config.CAUSAL_MEASURES[0])
-            results['fi_commodity_shrinking'] = run_shrinking_window_training_with_measure('fi_commodity', measure)
+            results['fi_commodity_shrinking'] = run_shrinking_window_training('fi_commodity')
         if args.universe in ['equity', 'all']:
-            measure = best_measures.get('equity', config.CAUSAL_MEASURES[0])
-            results['equity_shrinking'] = run_shrinking_window_training_with_measure('equity', measure)
+            results['equity_shrinking'] = run_shrinking_window_training('equity')
 
     if args.output_file:
         print(f"\nSaving results to {args.output_file}...")

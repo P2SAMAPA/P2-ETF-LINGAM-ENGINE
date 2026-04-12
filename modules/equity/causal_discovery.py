@@ -73,7 +73,8 @@ class EquityCausalDiscovery:
     def discover_causal_structure(
         self,
         data: pd.DataFrame,
-        use_bootstrap: bool = True
+        use_bootstrap: bool = True,
+        measure: Optional[str] = None
     ) -> Dict:
         """
         Discover causal structure using LiNGAM.
@@ -81,15 +82,17 @@ class EquityCausalDiscovery:
         Args:
             data: Prepared DataFrame
             use_bootstrap: Whether to use bootstrap for confidence
+            measure: Causal measure to use (e.g., "pwling", "kernel").
+                     If None, uses config default.
 
         Returns:
             Dictionary with causal discovery results
         """
         # Fit LiNGAM model
         if use_bootstrap:
-            self.lingam.fit_with_bootstrap(data)
+            self.lingam.fit_with_bootstrap(data, measure=measure)
         else:
-            self.lingam.fit(data)
+            self.lingam.fit(data, measure=measure)
 
         # Get causal edges
         self.causal_edges = self.lingam.get_causal_edges()
@@ -119,7 +122,6 @@ class EquityCausalDiscovery:
             List of leader predictions with scores
         """
         predictions = []
-        # Use self.lingam.variable_names instead of self.lingam.model.variable_names
         variable_names = self.lingam.variable_names if self.lingam.variable_names else []
 
         for var in self.assets:
@@ -135,7 +137,7 @@ class EquityCausalDiscovery:
             # Get bootstrap confidence
             confidence = 0.0
             if self.lingam.bootstrap_results:
-                for target, _ in followers[:3]:  # Top 3 followers
+                for target, _ in followers[:3]:
                     confidence += self.lingam.get_bootstrap_confidence(var, target)
                 if followers:
                     confidence /= len(followers[:3])
@@ -144,13 +146,11 @@ class EquityCausalDiscovery:
                 'ticker': var,
                 'causal_influence': total_influence,
                 'n_followers': len(followers),
-                'followers': followers[:5],  # Top 5
+                'followers': followers[:5],
                 'confidence': confidence,
             })
 
-        # Sort by causal influence
         predictions.sort(key=lambda x: x['causal_influence'], reverse=True)
-
         return predictions
 
     def get_sector_leaders(self) -> Dict[str, str]:

@@ -61,15 +61,12 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
 
     for measure in config.CAUSAL_MEASURES:
         print(f"\n--- Trying causal measure: {measure} ---")
-        # Temporarily override the measure in the causal discovery module
-        causal_discovery.lingam.config['measure'] = measure
         data = causal_discovery.prepare_data(train, val)
-        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap)
+        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap, measure=measure)
 
         leader_ticker = causal_results.get('leader', 'N/A')
         print(f"  Leader from {measure}: {leader_ticker}")
 
-        # Compute test period annualized return for this leader
         if leader_ticker in returns.columns:
             test_returns = test[leader_ticker].dropna()
             if len(test_returns) > 0:
@@ -91,11 +88,9 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
 
     if best_result is None:
         print("WARNING: No valid measure found. Using first measure as fallback.")
-        # Fallback: just use the first measure
         measure = config.CAUSAL_MEASURES[0]
-        causal_discovery.lingam.config['measure'] = measure
         data = causal_discovery.prepare_data(train, val)
-        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap)
+        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap, measure=measure)
         best_result = {
             'causal_results': causal_results,
             'leader_ticker': causal_results.get('leader', 'N/A'),
@@ -103,7 +98,6 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
             'measure': measure
         }
 
-    # Now best_result contains the best leader and its test return
     leader_ticker = best_result['leader_ticker']
     ann_return = best_result['ann_return']
     causal_results = best_result['causal_results']
@@ -112,7 +106,6 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
     print(f"\n=== Selected measure: {measure_used} ===")
     print(f"Best leader: {leader_ticker}, annualized return: {ann_return:.2%}")
 
-    # Compute full metrics for the best leader
     metrics = {}
     if leader_ticker in returns.columns:
         test_returns = test[leader_ticker].dropna()
@@ -126,10 +119,9 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
                 'best_day': full_metrics.get('best_day', 0.0),
             }
 
-    # Build signals manually
     signals = {
         'primary_signal': {'ticker': leader_ticker, 'ann_return': ann_return},
-        'confidence': causal_results.get('leader_score', 0.0),  # use leader score as conviction
+        'confidence': causal_results.get('leader_score', 0.0),
         'all_signals': causal_discovery.get_leader_predictions()[:3] if hasattr(causal_discovery, 'get_leader_predictions') else [],
         'universe': universe,
         'date': config.PREDICTION_DATE,
@@ -164,7 +156,6 @@ def run_shrinking_window_training(universe: str):
         exclude_negative_returns=config.NEGATIVE_RETURN_ZERO_WEIGHT
     )
 
-    # For each measure, compute consensus leader and its annualized return
     best_ann_return = -np.inf
     best_result = None
 
@@ -182,10 +173,8 @@ def run_shrinking_window_training(universe: str):
         for i, window in enumerate(windows):
             print(f"\n  Window {i+1}/{len(windows)}: {window['window_start']} to {window['window_end']}")
             causal_discovery = FICausalDiscovery() if universe == 'fi_commodity' else EquityCausalDiscovery()
-            # Set measure for this window
-            causal_discovery.lingam.config['measure'] = measure
             data = causal_discovery.prepare_data(window['returns'])
-            causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap=False)
+            causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap=False, measure=measure)
 
             if causal_results['leader'] and causal_results['leader'] in window['returns'].columns:
                 leader_returns = window['returns'][causal_results['leader']].dropna()
@@ -206,11 +195,9 @@ def run_shrinking_window_training(universe: str):
             print(f"  No valid window results for measure {measure}. Skipping.")
             continue
 
-        # Compute consensus for this measure
         assets = config.FI_COMMODITY_ASSETS if universe == 'fi_commodity' else config.EQUITY_ASSETS
         consensus_df = scorer.calculate_consensus_scores(window_results, assets)
         final_leader, conviction, top_3 = scorer.get_final_leader(consensus_df)
-        # Get annualized return for the final leader from top_3
         leader_metrics = next((p for p in top_3 if p['ticker'] == final_leader), None)
         ann_return = leader_metrics['ann_return'] if leader_metrics else 0.0
         print(f"  Measure {measure}: Final leader={final_leader}, annualized return={ann_return:.2%}, conviction={conviction:.2%}")
@@ -230,7 +217,6 @@ def run_shrinking_window_training(universe: str):
 
     if best_result is None:
         print("WARNING: No valid measure found for shrinking window. Using fallback.")
-        # Fallback: use first measure and empty results
         best_result = {
             'final_leader': None,
             'conviction': 0,
@@ -258,8 +244,6 @@ def run_shrinking_window_training(universe: str):
                 'win_rate': 0.0,
                 'best_day': 0.0,
             }
-        else:
-            metrics = {'annualized_return': 0.0, 'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'win_rate': 0.0, 'best_day': 0.0}
 
     signals = {
         'primary_signal': {'ticker': final_leader, 'ann_return': ann_return},

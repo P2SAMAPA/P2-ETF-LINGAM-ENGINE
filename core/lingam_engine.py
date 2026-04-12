@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional, List
 from lingam import DirectLiNGAM
-import config
+import config as config_module
 
 
 class LingamEngine:
@@ -16,14 +16,17 @@ class LingamEngine:
     LiNGAM-based causal discovery engine for ETF universe analysis.
     """
 
-    def __init__(self, config: dict = None):
+    def __init__(self, engine_config: dict = None):
         """
         Initialize the LiNGAM engine.
 
         Args:
-            config: Dictionary with LiNGAM configuration parameters
+            engine_config: Dictionary with LiNGAM configuration parameters
         """
-        self.config = config or config.LINGAM_CONFIG.copy()
+        if engine_config is None:
+            self.config = config_module.LINGAM_CONFIG.copy()
+        else:
+            self.config = engine_config.copy()
         self.model = None
         self.causal_order = None
         self.adjacency_matrix = None
@@ -122,7 +125,7 @@ class LingamEngine:
 
     def get_causal_edges(
         self,
-        threshold: float = config.MIN_CAUSAL_THRESHOLD
+        threshold: float = config_module.MIN_CAUSAL_THRESHOLD
     ) -> List[Tuple[str, str, float]]:
         """
         Get significant causal edges.
@@ -168,7 +171,7 @@ class LingamEngine:
 
             # Get causal direction counts from bootstrap results
             direction_counts = self.bootstrap_results['result'].get_causal_direction_counts(
-                min_causal_effect=config.MIN_CAUSAL_THRESHOLD
+                min_causal_effect=config_module.MIN_CAUSAL_THRESHOLD
             )
 
             # Find the probability for the specific direction
@@ -210,7 +213,7 @@ class LingamEngine:
 
     def identify_leaders(
         self,
-        threshold: float = config.MIN_CAUSAL_THRESHOLD
+        threshold: float = config_module.MIN_CAUSAL_THRESHOLD
     ) -> Dict[str, float]:
         """
         Identify leader variables (high out-degree).
@@ -237,7 +240,7 @@ class LingamEngine:
     def identify_followers(
         self,
         leader: str,
-        threshold: float = config.MIN_CAUSAL_THRESHOLD
+        threshold: float = config_module.MIN_CAUSAL_THRESHOLD
     ) -> List[Tuple[str, float]]:
         """
         Identify followers of a leader variable.

@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-Uses custom CSS for clean metric boxes.
+Uses equal-height metric boxes.
 """
 
 import streamlit as st
@@ -12,7 +12,7 @@ from io import BytesIO
 import ast
 import json
 import sys
-import os
+os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -98,21 +98,21 @@ def extract_prediction(row):
 # Rendering functions
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
-    """Render 5 KPI boxes with controlled font sizes to prevent truncation."""
+    """Render 5 KPI boxes with equal height and centered content."""
+    cols = st.columns(5, gap="small")
     kpis = [
-        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%"),
-        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}"),
-        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%"),
-        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%"),
-        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%"),
+        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
+        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
+        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
+        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
+        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
     ]
-    cols = st.columns(5)
-    for col, (label, value) in zip(cols, kpis):
+    for col, (label, value, color) in zip(cols, kpis):
         with col:
             st.markdown(f"""
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 12px 8px; text-align: center; border: 1px solid #e9ecef;">
-                <div style="font-size: 13px; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px;">{label}</div>
-                <div style="font-size: 18px; font-weight: 600; color: #212529; margin-top: 6px;">{value}</div>
+            <div style="background: white; border-radius: 12px; padding: 12px 4px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); height: 90px; display: flex; flex-direction: column; justify-content: center;">
+                <div style="font-size: 20px; font-weight: 700; color: {color}; line-height: 1.2;">{value}</div>
+                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 8px;">{label}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -144,7 +144,7 @@ def render_prediction_card(data):
                 <p style="font-size: 32px; font-weight: 600; color: #6B21A8; margin: 0;">{data['conviction']*100:.1f}%</p>
             </div>
         </div>
-        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #d8b4fe; display: flex; justify-content: space-between;">
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #d8b4fe; display: flex; justify-content: space-between; flex-wrap: wrap;">
             <div>
                 <span style="font-size: 14px;"><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</span>
                 &nbsp;&nbsp;

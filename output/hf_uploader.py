@@ -62,24 +62,36 @@ class HFUploader:
         rows = []
 
         for pred in predictions:
+            # Safely extract top_3_picks
+            top_3 = pred.get('top_3_picks', [])
+            if not isinstance(top_3, list):
+                top_3 = []
+            top_3_tickers = [p.get('ticker', 'N/A') for p in top_3]
+            top_3_scores = [p.get('score', 0.0) for p in top_3]
+
+            # Safely extract followers
+            followers = pred.get('followers', [])
+            if not isinstance(followers, list):
+                followers = []
+
             row = {
-                'date': pred.get('date'),
-                'universe': pred.get('universe'),
-                'predicted_leader_etf': pred.get('predicted_leader_etf'),
-                'predicted_return': pred.get('predicted_return'),
-                'causal_confidence': pred.get('causal_confidence'),
-                'top_3_picks_tickers': json.dumps([p['ticker'] for p in pred.get('top_3_picks', [])]),
-                'top_3_picks_scores': json.dumps([p.get('score', 0) for p in pred.get('top_3_picks', [])]),
-                'followers': json.dumps(pred.get('followers', [])),
-                'model_version': pred.get('model_version'),
-                'training_mode': pred.get('training_mode'),
-                'window_start': pred.get('window_start'),
-                'window_end': pred.get('window_end'),
-                'metrics_total_return': pred.get('metrics', {}).get('total_return'),
-                'metrics_sharpe_ratio': pred.get('metrics', {}).get('sharpe_ratio'),
-                'metrics_max_drawdown': pred.get('metrics', {}).get('max_drawdown'),
-                'metrics_win_rate': pred.get('metrics', {}).get('win_rate'),
-                'metrics_best_day': pred.get('metrics', {}).get('best_day'),
+                'date': pred.get('date', datetime.now().strftime('%Y-%m-%d')),
+                'universe': pred.get('universe', 'unknown'),
+                'predicted_leader_etf': pred.get('predicted_leader_etf', 'N/A'),
+                'predicted_return': pred.get('predicted_return', 0.0),
+                'causal_confidence': pred.get('causal_confidence', 0.0),
+                'top_3_picks_tickers': json.dumps(top_3_tickers),
+                'top_3_picks_scores': json.dumps(top_3_scores),
+                'followers': json.dumps(followers),
+                'model_version': pred.get('model_version', config.MODEL_VERSION),
+                'training_mode': pred.get('training_mode', 'unknown'),
+                'window_start': pred.get('window_start', 'N/A'),
+                'window_end': pred.get('window_end', 'N/A'),
+                'metrics_total_return': pred.get('metrics', {}).get('total_return', 0.0),
+                'metrics_sharpe_ratio': pred.get('metrics', {}).get('sharpe_ratio', 0.0),
+                'metrics_max_drawdown': pred.get('metrics', {}).get('max_drawdown', 0.0),
+                'metrics_win_rate': pred.get('metrics', {}).get('win_rate', 0.0),
+                'metrics_best_day': pred.get('metrics', {}).get('best_day', 0.0),
             }
             rows.append(row)
 
@@ -91,7 +103,7 @@ class HFUploader:
         commit_message: str = None
     ) -> Dict:
         """
-        Upload predictions to HuggingFace.
+        Upload predictions to HuggingFace, appending to existing data.
 
         Args:
             predictions: List of prediction dictionaries
@@ -115,13 +127,40 @@ class HFUploader:
             }
 
         try:
-            # Prepare data
-            df = self.prepare_dataset(predictions)
+            # Load existing predictions if any
+            existing_df = self.load_existing_predictions()
+            new_df = self.prepare_dataset(predictions)
 
-            # Save locally first
+            # Combine: remove duplicates based on (date, universe, training_mode) if needed
+            if not existing_df.empty:
+                # Ensure date column is string for comparison
+                existing_df['date'] = existing_df['date'].astype(str)
+                new_df['date'] = new_df['date'].astype(str)
+                # Create a key
+                existing_df['_key'] = existing_df['date'] + '_' + existing_df['universe'] + '_' + existing_df['training_mode']
+                new_df['_key'] = new_df['date'] + '_' + new_df['universe'] + '_' + new_df['training_mode']
+                # Keep only new rows that are not already present
+                new_df = new_df[~new_df['_key'].isin(existing_df['_key'])]
+                # Drop temporary key columns
+                new_df = new_df.drop(columns=['_key'])
+                existing_df = existing_df.drop(columns=['_key'])
+                # Concatenate
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            else:
+                combined_df = new_df
+
+            if combined_df.empty:
+                return {
+                    'success': True,
+                    'repo': self.repo_name,
+                    'n_predictions': 0,
+                    'message': 'No new predictions to upload'
+                }
+
+            # Save locally
             local_path = './output/predictions.parquet'
             os.makedirs('./output', exist_ok=True)
-            df.to_parquet(local_path)
+            combined_df.to_parquet(local_path, index=False)
 
             # Upload to HF
             self.api.upload_file(
@@ -129,13 +168,13 @@ class HFUploader:
                 path_in_repo='predictions.parquet',
                 repo_id=self.repo_name,
                 repo_type='dataset',
-                commit_message=commit_message or f'Update predictions: {datetime.now().strftime("%Y-%m-%d")}'
+                commit_message=commit_message or f'Update predictions: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
             )
 
             return {
                 'success': True,
                 'repo': self.repo_name,
-                'n_predictions': len(predictions),
+                'n_predictions': len(combined_df),
                 'message': 'Upload successful'
             }
 
@@ -158,8 +197,9 @@ class HFUploader:
 
         try:
             from datasets import load_dataset
-            ds = load_dataset(self.repo_name)
-            return ds['train'].to_pandas()
+            ds = load_dataset(self.repo_name, split='train')
+            df = ds.to_pandas()
+            return df
         except Exception as e:
             print(f"Could not load existing predictions: {e}")
             return pd.DataFrame()

@@ -119,7 +119,8 @@ class FICausalDiscovery:
             List of leader predictions with scores
         """
         predictions = []
-        variable_names = self.lingam.model.variable_names if self.lingam.model else []
+        # Use self.lingam.variable_names instead of self.lingam.model.variable_names
+        variable_names = self.lingam.variable_names if self.lingam.variable_names else []
 
         for var in self.assets:
             if var not in variable_names:

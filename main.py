@@ -53,12 +53,10 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
     if universe == 'fi_commodity':
         causal_discovery = FICausalDiscovery()
         leader_identifier = FILEaderIdentifier()
-        signal_generator = FISignalGenerator()
         benchmark = config.FI_COMMODITY_BENCHMARK
     else:
         causal_discovery = EquityCausalDiscovery()
         leader_identifier = EquityLeaderIdentifier()
-        signal_generator = EquitySignalGenerator()
         benchmark = config.EQUITY_BENCHMARK
 
     print("\nRunning causal discovery...")
@@ -72,12 +70,14 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
     print("\nGenerating leader report...")
     leader_report = leader_identifier.generate_leader_report(predictions, [], returns)
 
-    print(f"  Consensus leader: {leader_report['consensus_leader']}")
-    print(f"  Conviction: {leader_report['consensus_conviction']:.2%}")
+    leader_ticker = leader_report.get('consensus_leader', causal_results['leader'])
+    conviction = leader_report.get('consensus_conviction', 0.0)
+
+    print(f"  Consensus leader: {leader_ticker}")
+    print(f"  Conviction: {conviction:.2%}")
 
     # Compute annualized return and other metrics on test period
     metrics = {}
-    leader_ticker = leader_report['consensus_leader']
     if leader_ticker in returns.columns:
         test_returns = test[leader_ticker].dropna()
         if len(test_returns) > 0:
@@ -94,12 +94,17 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
             print(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
             print(f"  Max Drawdown: {metrics['max_drawdown']:.2%}")
 
-    signals = signal_generator.generate_signals(leader_report, returns, config.PREDICTION_DATE)
-    if signals is None:
-        signals = {'primary_signal': {'ticker': 'N/A'}, 'confidence': 0.0, 'signals_list': []}
-    elif 'primary_signal' not in signals or signals['primary_signal'] is None:
-        signals['primary_signal'] = {'ticker': 'N/A'}
-        signals['confidence'] = 0.0
+    # Build signals manually
+    signals = {
+        'primary_signal': {
+            'ticker': leader_ticker,
+            'ann_return': metrics.get('annualized_return', 0.0)
+        },
+        'confidence': conviction,
+        'all_signals': predictions[:3] if predictions else [],
+        'universe': universe,
+        'date': config.PREDICTION_DATE,
+    }
 
     print(f"  Primary signal: {signals['primary_signal']['ticker']}")
     print(f"  Confidence: {signals['confidence']:.1f}%")
@@ -175,7 +180,6 @@ def run_shrinking_window_training(universe: str):
         for pick in top_3:
             print(f"  {pick['ticker']}: ann_return={pick['ann_return']:.2%}")
 
-        # Build metrics using the leader's annualized return from consensus
         metrics = {}
         leader_metrics = next((p for p in top_3 if p['ticker'] == final_leader), None)
         if leader_metrics:
@@ -183,14 +187,12 @@ def run_shrinking_window_training(universe: str):
                 'annualized_return': leader_metrics['ann_return'],
                 'sharpe_ratio': leader_metrics.get('sharpe', 0.0),
                 'max_drawdown': leader_metrics.get('max_dd', 0.0),
-                'win_rate': 0.0,  # Not available from consensus
+                'win_rate': 0.0,
                 'best_day': 0.0,
             }
-        else:
-            metrics = {'annualized_return': 0.0, 'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'win_rate': 0.0, 'best_day': 0.0}
 
         signals = {
-            'primary_signal': {'ticker': final_leader, 'ann_return': metrics['annualized_return']},
+            'primary_signal': {'ticker': final_leader, 'ann_return': metrics.get('annualized_return', 0.0)},
             'confidence': conviction,
             'all_signals': top_3,
             'universe': universe,
@@ -257,9 +259,7 @@ def main():
         print("\nUploading results to HuggingFace...")
         uploader = HFUploader()
         predictions = []
-        print(f"Number of result entries: {len(results)}")
         for key, result in results.items():
-            print(f"  {key}: signals present = {bool(result and result.get('signals') and result['signals'].get('primary_signal'))}")
             if result and result.get('signals') and result['signals'].get('primary_signal'):
                 formatter = PredictionFormatter()
                 pred = formatter.format_prediction(
@@ -271,12 +271,8 @@ def main():
                 if 'universe' not in pred and 'universe' in result:
                     pred['universe'] = result['universe']
                 predictions.append(pred)
-        print(f"Prepared {len(predictions)} predictions for upload")
         if predictions:
-            upload_result = uploader.upload_predictions(predictions)
-            print(f"Upload result: {upload_result}")
-        else:
-            print("No predictions to upload (missing signals).")
+            uploader.upload_predictions(predictions)
 
     print("\nTraining complete!")
     return results

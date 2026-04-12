@@ -1,7 +1,7 @@
 """
 HuggingFace Output Module
 =========================
-Uploads prediction results to HuggingFace datasets.
+Uploads prediction results to HuggingFace datasets (overwrites existing file).
 """
 
 import pandas as pd
@@ -70,40 +70,21 @@ class HFUploader:
             return {'success': False, 'error': 'No HF token'}
 
         try:
-            # Load existing predictions
-            existing_df = self.load_existing_predictions()
-            print(f"Loaded existing predictions: {len(existing_df)} rows")
-
+            # Prepare new dataset
             new_df = self.prepare_dataset(predictions)
             print(f"New predictions: {len(new_df)} rows")
 
-            if not existing_df.empty:
-                # Convert date columns to string for merging
-                existing_df['date'] = existing_df['date'].astype(str)
-                new_df['date'] = new_df['date'].astype(str)
-                existing_df['_key'] = existing_df['date'] + '_' + existing_df['universe'] + '_' + existing_df['training_mode']
-                new_df['_key'] = new_df['date'] + '_' + new_df['universe'] + '_' + new_df['training_mode']
-                # Keep only new rows that are not already present
-                new_df = new_df[~new_df['_key'].isin(existing_df['_key'])]
-                new_df = new_df.drop(columns=['_key'])
-                existing_df = existing_df.drop(columns=['_key'])
-                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-                print(f"Combined dataset: {len(combined_df)} rows (added {len(new_df)} new rows)")
-            else:
-                combined_df = new_df
-                print(f"Using only new dataset: {len(combined_df)} rows")
+            if new_df.empty:
+                print("No predictions to upload")
+                return {'success': True, 'repo': self.repo_name, 'n_predictions': 0, 'message': 'No predictions'}
 
-            if combined_df.empty:
-                print("No new predictions to upload")
-                return {'success': True, 'repo': self.repo_name, 'n_predictions': 0, 'message': 'No new predictions'}
-
-            # Save locally
+            # Save locally (overwrite)
             os.makedirs('./output', exist_ok=True)
             local_path = './output/predictions.parquet'
-            combined_df.to_parquet(local_path, index=False)
+            new_df.to_parquet(local_path, index=False)
             print(f"Saved parquet locally to {local_path}")
 
-            # Upload to HuggingFace
+            # Upload to HuggingFace (overwrite)
             self.api.upload_file(
                 path_or_fileobj=local_path,
                 path_in_repo='predictions.parquet',
@@ -112,25 +93,12 @@ class HFUploader:
                 commit_message=commit_message or f'Update predictions: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
             )
             print("Upload successful")
-            return {'success': True, 'repo': self.repo_name, 'n_predictions': len(combined_df), 'message': 'Upload successful'}
+            return {'success': True, 'repo': self.repo_name, 'n_predictions': len(new_df), 'message': 'Upload successful'}
         except Exception as e:
             print(f"Upload failed: {e}")
             import traceback
             traceback.print_exc()
             return {'success': False, 'error': str(e), 'message': 'Upload failed'}
-
-    def load_existing_predictions(self) -> pd.DataFrame:
-        if not HAS_HF or not self.token:
-            return pd.DataFrame()
-        try:
-            from datasets import load_dataset
-            ds = load_dataset(self.repo_name, split='train')
-            df = ds.to_pandas()
-            print(f"Loaded {len(df)} existing predictions from {self.repo_name}")
-            return df
-        except Exception as e:
-            print(f"Could not load existing predictions: {e}")
-            return pd.DataFrame()
 
     def create_repo_if_not_exists(self) -> bool:
         if not HAS_HF or not self.api:

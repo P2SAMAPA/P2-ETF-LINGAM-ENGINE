@@ -98,6 +98,7 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
 
     # Calculate performance metrics
     print("\nCalculating performance metrics...")
+    metrics = {}
     if leader_report['consensus_leader'] in returns.columns:
         leader_returns = returns[leader_report['consensus_leader']].dropna()
         metrics = calculate_all_metrics(leader_returns)
@@ -109,6 +110,19 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
     print("\nGenerating trading signals...")
     signals = signal_generator.generate_signals(leader_report, returns, config.PREDICTION_DATE)
 
+    # Handle case where signals is None or missing expected keys
+    if signals is None:
+        print("  Warning: No signals generated. Using default empty signal.")
+        signals = {
+            'primary_signal': {'ticker': 'N/A'},
+            'confidence': 0.0,
+            'signals_list': []
+        }
+    elif 'primary_signal' not in signals or signals['primary_signal'] is None:
+        print("  Warning: Primary signal missing. Using fallback.")
+        signals['primary_signal'] = {'ticker': 'N/A'}
+        signals['confidence'] = 0.0
+
     print(f"  Primary signal: {signals['primary_signal']['ticker']}")
     print(f"  Confidence: {signals['confidence']:.1f}%")
 
@@ -118,7 +132,7 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
         'causal_results': causal_results,
         'leader_report': leader_report,
         'signals': signals,
-        'metrics': metrics if 'metrics' in dir() else {},
+        'metrics': metrics,
         'train_period': f"{train.index[0]} to {train.index[-1]}",
         'test_period': f"{test.index[0]} to {test.index[-1]}"
     }
@@ -363,7 +377,7 @@ def main():
         predictions = []
 
         for key, result in results.items():
-            if 'signals' in result:
+            if 'signals' in result and result['signals'] and result['signals'].get('primary_signal'):
                 formatter = PredictionFormatter()
                 pred = formatter.format_prediction(
                     result['signals'],

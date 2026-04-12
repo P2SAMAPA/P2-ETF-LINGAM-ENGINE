@@ -4,6 +4,7 @@ P2-ETF-LINGAM-Engine Configuration
 Central configuration for the quantitative trading engine.
 """
 
+import os
 from pathlib import Path
 
 # ==============================================================================
@@ -17,6 +18,11 @@ STREAMLIT_DIR = PROJECT_ROOT / "streamlit_app"
 # ==============================================================================
 # HUGGINGFACE DATASET CONFIGURATION
 # ==============================================================================
+HF_CONFIG = {
+    "api_key": os.environ.get("HF_API_KEY", ""),
+    "model": os.environ.get("HF_MODEL", "default-model")
+}
+
 INPUT_DATASET = "P2SAMAPA/fi-etf-macro-signal-master-data"
 OUTPUT_DATASET = "P2SAMAPA/p2-etf-lingam-results"
 
@@ -56,6 +62,9 @@ EQUITY_ASSETS = [
 ]
 
 EQUITY_BENCHMARK = "SPY"  # SPDR S&P 500 ETF Trust
+
+# Combined ETF universe (all assets + both benchmarks) used by data.loader
+ETF_UNIVERSE = list(set(FI_COMMODITY_ASSETS + EQUITY_ASSETS + [FI_COMMODITY_BENCHMARK, EQUITY_BENCHMARK]))
 
 # ==============================================================================
 # MACRO VARIABLES (used as features in causal discovery)

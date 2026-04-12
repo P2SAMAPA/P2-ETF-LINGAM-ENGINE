@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-No extra backtest columns required.
+No duplicate metrics, no "SAMBA" label.
 """
 
 import streamlit as st
@@ -117,26 +117,6 @@ def render_kpi_boxes(metrics: dict):
             </div>
             """, unsafe_allow_html=True)
 
-def render_comparison_card(strategy_name: str, benchmark_name: str, metrics: dict):
-    """Small comparison table for the strategy vs benchmark (only metrics)."""
-    st.markdown(f"""
-    <div style="background: #f9fafb; border-radius: 12px; padding: 16px; border: 1px solid #e5e7eb; margin-top: 16px;">
-        <p style="font-weight: 600; margin-bottom: 12px;">📊 SAMBA {strategy_name} vs {benchmark_name}</p>
-        <table style="width:100%; text-align:center;">
-            <tr>
-                <th>Total Return</th><th>Sharpe</th><th>Max DD</th><th>Win Rate</th><th>Best Day</th>
-            </tr>
-            <tr>
-                <td>{metrics.get('total_return',0)*100:.1f}%</td>
-                <td>{metrics.get('sharpe_ratio',0):.2f}</td>
-                <td>{metrics.get('max_drawdown',0)*100:.1f}%</td>
-                <td>{metrics.get('win_rate',0)*100:.1f}%</td>
-                <td>{metrics.get('best_day',0)*100:.1f}%</td>
-            </tr>
-        </table>
-    </div>
-    """, unsafe_allow_html=True)
-
 def render_signal_history_table(signals):
     """Placeholder for signal history (can be replaced later)."""
     if not signals:
@@ -145,42 +125,39 @@ def render_signal_history_table(signals):
     df = pd.DataFrame(signals)
     st.dataframe(df, use_container_width=True)
 
-def render_prediction_card(data, title):
-    """Render a single prediction card with leader, conviction, top picks, and metrics."""
+def render_prediction_card(data):
+    """Render a single prediction card with leader, conviction, top picks, and KPI boxes."""
     if data is None:
-        st.info(f"No {title} prediction available. Run training with --upload.")
+        st.info("No prediction available. Run training with --upload.")
         return
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
-                    border-radius: 16px; padding: 24px; border: 1px solid #d8b4fe; margin-bottom: 24px;">
-            <div style="display: flex; justify-content: space-between;">
-                <div>
-                    <h2 style="font-size: 48px; color: #6B21A8;">{data['leader']}</h2>
-                    <p>{data['leader_name']}</p>
-                </div>
-                <div style="text-align: right;">
-                    <p style="font-size: 12px; color: #6b7280;">Conviction</p>
-                    <p style="font-size: 28px; font-weight: 600; color: #6B21A8;">{data['conviction']*100:.1f}%</p>
-                </div>
+    # Hero section: leader, conviction, top picks, date, mode
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+                border-radius: 16px; padding: 24px; border: 1px solid #d8b4fe; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                <h2 style="font-size: 48px; color: #6B21A8;">{data['leader']}</h2>
+                <p>{data['leader_name']}</p>
             </div>
-            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8b4fe;">
-                <p><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</p>
-                <p><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</p>
-            </div>
-            <div style="margin-top: 16px; display: flex; gap: 8px;">
-                <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px;">{data['prediction_date']}</span>
-                <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px;">{data['training_mode']}</span>
+            <div style="text-align: right;">
+                <p style="font-size: 12px; color: #6b7280;">Conviction</p>
+                <p style="font-size: 28px; font-weight: 600; color: #6B21A8;">{data['conviction']*100:.1f}%</p>
             </div>
         </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        render_kpi_boxes(data['metrics'])
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8b4fe;">
+            <p><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</p>
+            <p><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</p>
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px;">{data['prediction_date']}</span>
+            <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px;">{data['training_mode']}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Add a simple comparison card below the KPI boxes (optional)
-    render_comparison_card(data['leader'], data['benchmark'], data['metrics'])
+    # KPI boxes (metrics) directly below the hero card
+    render_kpi_boxes(data['metrics'])
 
 # ==============================================================================
 # Main app
@@ -209,12 +186,14 @@ def main():
     for tab, universe in zip(tabs, ['fi_commodity', 'equity']):
         with tab:
             st.markdown(f"### {universe.replace('_', ' ').title()} Module")
+
             # Fixed split
             fixed_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'fixed')]
             fixed_data = None
             if not fixed_rows.empty:
                 latest_fixed = fixed_rows.sort_values('date', ascending=False).iloc[0]
                 fixed_data = extract_prediction(latest_fixed)
+
             # Shrinking window
             shrink_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'shrinking')]
             shrink_data = None
@@ -225,10 +204,10 @@ def main():
             col_fixed, col_shrink = st.columns(2)
             with col_fixed:
                 st.markdown("#### 🔹 Fixed Split Training")
-                render_prediction_card(fixed_data, "fixed split")
+                render_prediction_card(fixed_data)
             with col_shrink:
                 st.markdown("#### 🔸 Shrinking Window (Consensus)")
-                render_prediction_card(shrink_data, "shrinking window")
+                render_prediction_card(shrink_data)
 
             st.markdown("---")
             st.markdown("#### Signal History")

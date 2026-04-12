@@ -81,53 +81,46 @@ MACRO_VARIABLES = [
 # ==============================================================================
 # LINGAM CONFIGURATION
 # ==============================================================================
+# List of causal measures to try (the best will be selected automatically)
+CAUSAL_MEASURES = ["pwling", "kernel"]  # can also add "pwling_fast", "kernel"
+
 LINGAM_CONFIG = {
-    "measure": "pwling",           # Pairwise likelihood LiNGAM
+    "measure": "pwling",           # default, but we will override in training
     "bootstrap": True,
-    "n_samplings": 100,           # Number of bootstrap samples
-    "significance_level": 0.05,     # Significance threshold for causal edges
-    "subset_variable_names": None,  # Use all variables
+    "n_samplings": 500,            # increased from 100 to 500
+    "significance_level": 0.05,    # unchanged
+    "subset_variable_names": None,
 }
 
 # ==============================================================================
 # TRAINING CONFIGURATION
 # ==============================================================================
-
-# Data Split Ratios (80/10/10)
 TRAIN_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
-
-# Rolling Window Parameters
-ROLLING_WINDOW_DAYS = 252  # ~1 trading year
-
-# Shrinking Window Parameters
-SHRINKING_WINDOW_YEARS = list(range(2008, 2025))  # 2008-2024 start years
-
-# Minimum causal strength threshold
+ROLLING_WINDOW_DAYS = 252
+SHRINKING_WINDOW_YEARS = list(range(2008, 2025))
 MIN_CAUSAL_THRESHOLD = 0.3
 
 # ==============================================================================
 # CONSENSUS SCORING WEIGHTS (Shrinking Window)
 # ==============================================================================
 CONSENSUS_WEIGHTS = {
-    "annualized_return": 0.60,  # 60% weight
-    "sharpe_ratio": 0.20,       # 20% weight
-    "max_drawdown": 0.20,       # 20% weight (inverted - lower is better)
+    "annualized_return": 0.60,
+    "sharpe_ratio": 0.20,
+    "max_drawdown": 0.20,
 }
-
-# Zero weight for negative return windows
 NEGATIVE_RETURN_ZERO_WEIGHT = True
 
 # ==============================================================================
 # STREAMLIT DISPLAY CONFIGURATION
 # ==============================================================================
 DISPLAY_CONFIG = {
-    "primary_color": "#6B21A8",    # Purple
-    "positive_color": "#10B981",   # Green
-    "negative_color": "#EF4444",   # Red
-    "neutral_color": "#6B7280",    # Gray
-    "background_color": "#FFFFFF", # White
+    "primary_color": "#6B21A8",
+    "positive_color": "#10B981",
+    "negative_color": "#EF4444",
+    "neutral_color": "#6B7280",
+    "background_color": "#FFFFFF",
     "border_radius": "8px",
     "font_family": "Inter, system-ui, sans-serif",
 }
@@ -137,7 +130,7 @@ DISPLAY_CONFIG = {
 # ==============================================================================
 DATA_START_DATE = "2008-01-01"
 DATA_END_DATE = "2026-04-11"
-PREDICTION_DATE = "2026-04-11"  # Next US market day
+PREDICTION_DATE = "2026-04-11"
 
 # ==============================================================================
 # OUTPUT CONFIGURATION
@@ -159,9 +152,6 @@ OUTPUT_COLUMNS = [
     "window_end",
 ]
 
-# ==============================================================================
-# METRICS CONFIGURATION
-# ==============================================================================
 METRICS_TO_CALCULATE = [
     "total_return",
     "sharpe_ratio",
@@ -173,8 +163,5 @@ METRICS_TO_CALCULATE = [
     "sortino_ratio",
 ]
 
-# ==============================================================================
-# VERSIONING
-# ==============================================================================
 MODEL_VERSION = "v1.0.0"
 ENGINE_NAME = "P2-ETF-LINGAM-Engine"

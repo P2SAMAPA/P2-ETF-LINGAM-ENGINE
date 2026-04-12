@@ -81,14 +81,14 @@ MACRO_VARIABLES = [
 # ==============================================================================
 # LINGAM CONFIGURATION
 # ==============================================================================
-# List of causal measures to try (the best will be selected automatically)
-CAUSAL_MEASURES = ["pwling", "kernel"]  # can also add "pwling_fast", "kernel"
+# List of causal measures to try on fixed split only (both will be tested)
+CAUSAL_MEASURES = ["pwling", "kernel"]
 
 LINGAM_CONFIG = {
-    "measure": "pwling",           # default, but we will override in training
+    "measure": "pwling",           # default, but we will override
     "bootstrap": True,
-    "n_samplings": 200,            # increased from 100 to 200
-    "significance_level": 0.05,    # unchanged
+    "n_samplings": 100,            # original value (not 200, not 50)
+    "significance_level": 0.05,
     "subset_variable_names": None,
 }
 
@@ -99,7 +99,10 @@ TRAIN_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
 ROLLING_WINDOW_DAYS = 252
-SHRINKING_WINDOW_YEARS = list(range(2008, 2025))
+
+# Keep all original shrinking windows (2008 to 2024 inclusive, every year)
+SHRINKING_WINDOW_YEARS = list(range(2008, 2025))   # 17 windows
+
 MIN_CAUSAL_THRESHOLD = 0.3
 
 # ==============================================================================

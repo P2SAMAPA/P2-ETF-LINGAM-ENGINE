@@ -1,0 +1,49 @@
+name: Run P2 ETF LiNGAM Engine
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        universe: [fi_commodity, equity]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set HuggingFace token
+        run: echo "HF_TOKEN=${{ secrets.HF_TOKEN }}" >> $GITHUB_ENV
+
+      - name: Ensure output directory exists
+        run: mkdir -p output
+
+      - name: Run pipeline (matrix)
+        run: |
+          python main.py \
+            --universe ${{ matrix.universe }} \
+            --mode both \
+            --output-file output/${{ matrix.universe }}_results.json \
+            --upload
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.universe }}
+          path: output/${{ matrix.universe }}_results.json

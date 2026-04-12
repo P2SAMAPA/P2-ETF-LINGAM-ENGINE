@@ -146,7 +146,7 @@ def run_shrinking_window_training(universe: str):
         universe: 'fi_commodity' or 'equity'
 
     Returns:
-        Dictionary with training results
+        Dictionary with training results (compatible with fixed split)
     """
     print(f"\n{'='*60}")
     print(f"Running SHRINKING WINDOW training for {universe}")
@@ -234,6 +234,38 @@ def run_shrinking_window_training(universe: str):
         for i, pick in enumerate(top_3, 1):
             print(f"  {i}. {pick['ticker']}: score={pick['score']:.4f}, ann_return={pick['ann_return']:.2%}")
 
+        # Build metrics for the final leader (use its average annualized return as proxy)
+        metrics = {}
+        if final_leader:
+            # Find the leader's average metrics from top_3
+            leader_metrics = next((p for p in top_3 if p['ticker'] == final_leader), None)
+            if leader_metrics:
+                metrics = {
+                    'total_return': leader_metrics.get('ann_return', 0.0),
+                    'sharpe_ratio': leader_metrics.get('sharpe', 0.0),
+                    'max_drawdown': leader_metrics.get('max_dd', 0.0),
+                    'win_rate': 0.0,  # Not available in consensus
+                    'best_day': 0.0,
+                }
+            else:
+                metrics = {'total_return': 0.0, 'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'win_rate': 0.0, 'best_day': 0.0}
+
+        # Build signals dict similar to fixed split
+        signals = {
+            'primary_signal': {'ticker': final_leader, 'ann_return': metrics.get('total_return', 0.0)},
+            'confidence': conviction,
+            'all_signals': top_3,
+            'universe': universe,
+            'date': config.PREDICTION_DATE,
+        }
+
+        # Build causal_results dict (mock structure for upload compatibility)
+        causal_results = {
+            'leader': final_leader,
+            'followers': [(p['ticker'], p['score']) for p in top_3[1:]] if len(top_3) > 1 else [],
+            'causal_edges': [],  # Not used for shrinking window
+        }
+
         return {
             'universe': universe,
             'training_mode': 'shrinking',
@@ -241,7 +273,10 @@ def run_shrinking_window_training(universe: str):
             'conviction': conviction,
             'top_3_picks': top_3,
             'window_results': window_results,
-            'n_windows': len(window_results)
+            'n_windows': len(window_results),
+            'signals': signals,
+            'metrics': metrics,
+            'causal_results': causal_results,
         }
     else:
         print("\nNo valid window results found.")
@@ -252,7 +287,10 @@ def run_shrinking_window_training(universe: str):
             'conviction': 0,
             'top_3_picks': [],
             'window_results': [],
-            'n_windows': 0
+            'n_windows': 0,
+            'signals': None,
+            'metrics': {},
+            'causal_results': {},
         }
 
 
@@ -379,7 +417,8 @@ def main():
         predictions = []
 
         for key, result in results.items():
-            if 'signals' in result and result['signals'] and result['signals'].get('primary_signal'):
+            # Both fixed and shrinking results now have 'signals', 'metrics', 'causal_results', 'training_mode'
+            if result and result.get('signals') and result['signals'].get('primary_signal'):
                 formatter = PredictionFormatter()
                 pred = formatter.format_prediction(
                     result['signals'],
@@ -387,6 +426,9 @@ def main():
                     result.get('causal_results', {}),
                     result.get('training_mode', 'unknown')
                 )
+                # Ensure universe is set in the prediction
+                if 'universe' not in pred and 'universe' in result:
+                    pred['universe'] = result['universe']
                 predictions.append(pred)
 
         if predictions:

@@ -7,7 +7,7 @@ Implements LiNGAM and DirectLiNGAM algorithms for causal discovery.
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional, List
-from lingam import DirectLiNGAM, LiNGAM
+from lingam import DirectLiNGAM
 from lingam.bootstrap import bootstrap
 import config
 

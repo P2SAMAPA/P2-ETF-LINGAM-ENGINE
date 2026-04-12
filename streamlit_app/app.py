@@ -76,20 +76,35 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
     # Get most recent prediction
     latest = uni_df.sort_values('date', ascending=False).iloc[0]
 
-    # Build top_3_picks from flat columns
+    # --- Robust parsing of top_3_picks ---
     tickers_str = latest.get('top_3_picks_tickers', '')
     scores_str = latest.get('top_3_picks_scores', '')
     top_3_picks = []
-    if tickers_str and scores_str and not pd.isna(tickers_str) and not pd.isna(scores_str):
-        tickers = [t.strip() for t in str(tickers_str).split(',')]
-        scores = [float(s.strip()) for s in str(scores_str).split(',')]
-        for t, s in zip(tickers[:3], scores[:3]):
-            top_3_picks.append({'ticker': t, 'score': s})
-    # Fallback if missing
+
+    # Check if both strings are non-empty and not NaN
+    if (pd.notna(tickers_str) and pd.notna(scores_str) and
+        str(tickers_str).strip() and str(scores_str).strip()):
+        try:
+            tickers = [t.strip() for t in str(tickers_str).split(',') if t.strip()]
+            scores_part = [s.strip() for s in str(scores_str).split(',') if s.strip()]
+            # Convert scores to float, skip any that fail
+            scores = []
+            for s in scores_part:
+                try:
+                    scores.append(float(s))
+                except ValueError:
+                    scores.append(0.0)
+            # Zip only up to the smaller length
+            for t, s in zip(tickers[:3], scores[:3]):
+                top_3_picks.append({'ticker': t, 'score': s})
+        except Exception:
+            top_3_picks = []
+
+    # Fallback if we didn't get at least 3 picks
     while len(top_3_picks) < 3:
         top_3_picks.append({'ticker': 'N/A', 'score': 0.0})
 
-    # Build metrics dict from flat columns
+    # --- Build metrics dict from flat columns ---
     metrics = {
         'total_return': latest.get('metrics_total_return', 0.0),
         'sharpe_ratio': latest.get('metrics_sharpe_ratio', 0.0),
@@ -97,14 +112,12 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
         'win_rate': latest.get('metrics_win_rate', 0.0),
         'best_day': latest.get('metrics_best_day', 0.0),
     }
-    # Convert any NaNs to 0
     for k in metrics:
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
     leader = latest.get('predicted_leader_etf', 'N/A')
-    if pd.isna(leader) or leader == '' or leader == 'N/A':
-        # No valid leader in this row, fallback to sample data
+    if pd.isna(leader) or str(leader).strip() == '' or str(leader) == 'N/A':
         return create_sample_data(universe)
 
     # Determine benchmark
@@ -146,7 +159,10 @@ def main():
         if not predictions_df.empty:
             st.success(f"Loaded {len(predictions_df)} predictions")
             st.write("Columns:", list(predictions_df.columns))
-            st.write("Sample:", predictions_df.head(2).to_dict())
+            # Show first row values to help debug
+            first = predictions_df.iloc[0]
+            st.write("Sample row (first):")
+            st.json({k: str(v)[:100] for k, v in first.items() if pd.notna(v)})
         else:
             st.warning("No predictions loaded. Using sample data.")
 

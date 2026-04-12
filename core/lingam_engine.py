@@ -28,6 +28,7 @@ class LingamEngine:
         else:
             self.config = engine_config.copy()
         self.model = None
+        self.variable_names = None
         self.causal_order = None
         self.adjacency_matrix = None
         self.bootstrap_results = None
@@ -42,6 +43,9 @@ class LingamEngine:
         Returns:
             self
         """
+        # Store variable names from the data
+        self.variable_names = list(data.columns)
+
         # Use DirectLiNGAM for more robust causal discovery
         self.model = DirectLiNGAM(
             measure=self.config.get('measure', 'pwling')
@@ -71,10 +75,10 @@ class LingamEngine:
         Returns:
             self
         """
-        n_samplings = n_samplings or self.config.get('n_samplings', 100)
-
-        # Fit base model
+        # First fit the base model (this also sets variable_names)
         self.fit(data)
+
+        n_samplings = n_samplings or self.config.get('n_samplings', 100)
 
         # Perform bootstrap using the model's bootstrap method
         bootstrap_result = self.model.bootstrap(data.values, n_sampling=n_samplings)
@@ -102,9 +106,9 @@ class LingamEngine:
         Returns:
             List of variable names in causal order
         """
-        if self.causal_order is None:
+        if self.causal_order is None or self.variable_names is None:
             return []
-        return [self.model.variable_names[i] for i in self.causal_order]
+        return [self.variable_names[i] for i in self.causal_order]
 
     def get_direct_effects(self) -> pd.DataFrame:
         """
@@ -113,13 +117,13 @@ class LingamEngine:
         Returns:
             DataFrame with direct effects (row=effect, col=cause)
         """
-        if self.adjacency_matrix is None:
+        if self.adjacency_matrix is None or self.variable_names is None:
             return pd.DataFrame()
 
         df = pd.DataFrame(
             self.adjacency_matrix,
-            index=self.model.variable_names,
-            columns=self.model.variable_names
+            index=self.variable_names,
+            columns=self.variable_names
         )
         return df
 
@@ -136,9 +140,15 @@ class LingamEngine:
         Returns:
             List of (cause, effect, strength) tuples
         """
+        if self.adjacency_matrix is None or self.variable_names is None:
+            return []
+
         edges = []
-        for i, cause in enumerate(self.model.variable_names):
-            for j, effect in enumerate(self.model.variable_names):
+        n_vars = len(self.variable_names)
+        for i in range(n_vars):
+            cause = self.variable_names[i]
+            for j in range(n_vars):
+                effect = self.variable_names[j]
                 strength = self.adjacency_matrix[j, i]
                 if abs(strength) >= threshold and i != j:
                     edges.append((cause, effect, strength))
@@ -162,12 +172,12 @@ class LingamEngine:
         Returns:
             Confidence level (0-1)
         """
-        if self.bootstrap_results is None:
+        if self.bootstrap_results is None or self.variable_names is None:
             return 0.0
 
         try:
-            cause_idx = self.model.variable_names.index(cause)
-            effect_idx = self.model.variable_names.index(effect)
+            cause_idx = self.variable_names.index(cause)
+            effect_idx = self.variable_names.index(effect)
 
             # Get causal direction counts from bootstrap results
             direction_counts = self.bootstrap_results['result'].get_causal_direction_counts(
@@ -203,8 +213,11 @@ class LingamEngine:
         Returns:
             Predicted effect values
         """
-        cause_idx = self.model.variable_names.index(cause)
-        effect_idx = self.model.variable_names.index(effect)
+        if self.adjacency_matrix is None or self.variable_names is None:
+            return np.array([])
+
+        cause_idx = self.variable_names.index(cause)
+        effect_idx = self.variable_names.index(effect)
 
         causal_strength = self.adjacency_matrix[effect_idx, cause_idx]
         predicted_effect = data[cause].values * causal_strength
@@ -224,15 +237,14 @@ class LingamEngine:
         Returns:
             Dictionary of {variable: leader_score}
         """
+        if self.adjacency_matrix is None or self.variable_names is None:
+            return {}
+
         leader_scores = {}
 
-        for var in self.model.variable_names:
-            var_idx = self.model.variable_names.index(var)
-
-            # Sum of outgoing causal effects
-            outgoing = np.sum(np.abs(self.adjacency_matrix[:, var_idx]))
-            outgoing = np.sum(np.abs(self.adjacency_matrix[var_idx, :]))
-
+        for idx, var in enumerate(self.variable_names):
+            # Sum of outgoing causal effects (from this variable to others)
+            outgoing = np.sum(np.abs(self.adjacency_matrix[:, idx]))
             leader_scores[var] = float(outgoing)
 
         return leader_scores
@@ -252,10 +264,13 @@ class LingamEngine:
         Returns:
             List of (follower, strength) tuples sorted by strength
         """
-        leader_idx = self.model.variable_names.index(leader)
+        if self.adjacency_matrix is None or self.variable_names is None:
+            return []
+
+        leader_idx = self.variable_names.index(leader)
         followers = []
 
-        for i, var in enumerate(self.model.variable_names):
+        for i, var in enumerate(self.variable_names):
             if i != leader_idx:
                 strength = self.adjacency_matrix[i, leader_idx]
                 if abs(strength) >= threshold:

@@ -1,7 +1,7 @@
 """
 HuggingFace Output Module
 =========================
-Uploads prediction results to HuggingFace datasets (overwrites existing file).
+Uploads prediction results to HuggingFace datasets.
 """
 
 import pandas as pd
@@ -36,11 +36,13 @@ class HFUploader:
             top_3_tickers = [p.get('ticker', 'N/A') for p in top_3]
             top_3_scores = [p.get('score', 0.0) for p in top_3]
             followers = pred.get('followers', [])
+            metrics = pred.get('metrics', {})
+            
             row = {
                 'date': pred.get('date', datetime.now().strftime('%Y-%m-%d')),
                 'universe': pred.get('universe', 'unknown'),
                 'predicted_leader_etf': pred.get('predicted_leader_etf', 'N/A'),
-                'predicted_return': pred.get('predicted_return', 0.0),
+                'predicted_return': pred.get('predicted_return', 0.0),  # annualized return
                 'causal_confidence': pred.get('causal_confidence', 0.0),
                 'top_3_picks_tickers': json.dumps(top_3_tickers),
                 'top_3_picks_scores': json.dumps(top_3_scores),
@@ -49,15 +51,18 @@ class HFUploader:
                 'training_mode': pred.get('training_mode', 'unknown'),
                 'window_start': pred.get('window_start', 'N/A'),
                 'window_end': pred.get('window_end', 'N/A'),
-                'metrics_annualized_return': pred.get('metrics', {}).get('annualized_return', 0.0),
-                'metrics_sharpe_ratio': pred.get('metrics', {}).get('sharpe_ratio', 0.0),
-                'metrics_max_drawdown': pred.get('metrics', {}).get('max_drawdown', 0.0),
-                'metrics_win_rate': pred.get('metrics', {}).get('win_rate', 0.0),
-                'metrics_best_day': pred.get('metrics', {}).get('best_day', 0.0),
+                'metrics_annualized_return': pred.get('predicted_return', 0.0),  # use same as predicted_return
+                'metrics_sharpe_ratio': metrics.get('sharpe_ratio', 0.0),
+                'metrics_max_drawdown': metrics.get('max_drawdown', 0.0),
+                'metrics_win_rate': metrics.get('win_rate', 0.0),
+                'metrics_best_day': metrics.get('best_day', 0.0),
             }
             rows.append(row)
         df = pd.DataFrame(rows)
         print(f"Prepared dataset with {len(df)} rows, columns: {list(df.columns)}")
+        # Print first row for debugging
+        if len(df) > 0:
+            print(f"Sample annualized return: {df.iloc[0]['metrics_annualized_return']}")
         return df
 
     def upload_predictions(self, predictions: List[Dict], commit_message: str = None) -> Dict:
@@ -70,7 +75,6 @@ class HFUploader:
             return {'success': False, 'error': 'No HF token'}
 
         try:
-            # Prepare new dataset
             new_df = self.prepare_dataset(predictions)
             print(f"New predictions: {len(new_df)} rows")
 

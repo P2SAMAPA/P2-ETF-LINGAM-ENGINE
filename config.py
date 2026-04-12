@@ -87,7 +87,7 @@ CAUSAL_MEASURES = ["pwling", "kernel"]  # can also add "pwling_fast", "kernel"
 LINGAM_CONFIG = {
     "measure": "pwling",           # default, but we will override in training
     "bootstrap": True,
-    "n_samplings": 500,            # increased from 100 to 500
+    "n_samplings": 200,            # increased from 100 to 200
     "significance_level": 0.05,    # unchanged
     "subset_variable_names": None,
 }

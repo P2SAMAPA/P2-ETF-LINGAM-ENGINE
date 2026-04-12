@@ -97,7 +97,8 @@ class ConsensusScorer:
         Calculate consensus scores for all assets across all windows.
 
         Args:
-            window_results: List of window analysis results
+            window_results: List of window analysis results. Each dict must have
+                           'window_start' and 'returns' keys.
             assets: List of asset tickers
 
         Returns:
@@ -106,6 +107,11 @@ class ConsensusScorer:
         results = []
 
         for window in window_results:
+            # Skip windows that don't have the required 'returns' key
+            if 'returns' not in window:
+                print(f"Warning: Window {window.get('window_start', 'unknown')} missing 'returns' key. Skipping.")
+                continue
+
             window_start = window['window_start']
             window_returns = window['returns']
 

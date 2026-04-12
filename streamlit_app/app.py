@@ -23,7 +23,7 @@ from streamlit_app.utils import (
     apply_custom_css,
     get_etf_display_name,
     calculate_next_trading_day,
-    create_sample_data  # kept only as ultimate fallback
+    create_sample_data
 )
 from streamlit_app.components.hero_card import (
     render_hero_card,
@@ -52,20 +52,20 @@ def load_predictions_from_hf() -> pd.DataFrame:
         st.warning(f"Could not load predictions from HuggingFace: {e}")
         return pd.DataFrame()
 
-def safe_parse_list(string_value):
-    """Convert a string representation of a list into a Python list."""
-    if pd.isna(string_value) or not string_value:
+def safe_parse_followers(followers_str):
+    """Convert a string representation of a list of [ticker, strength] into a Python list."""
+    if pd.isna(followers_str) or not followers_str:
         return []
     try:
         # Try literal_eval first (works for Python list syntax)
-        parsed = ast.literal_eval(str(string_value))
+        parsed = ast.literal_eval(str(followers_str))
         if isinstance(parsed, list):
             return parsed
     except:
         pass
     try:
         # Try JSON
-        parsed = json.loads(str(string_value))
+        parsed = json.loads(str(followers_str))
         if isinstance(parsed, list):
             return parsed
     except:
@@ -75,7 +75,7 @@ def safe_parse_list(string_value):
 def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
     """
     Extract the most recent prediction for a given universe from the parquet data.
-    Uses real columns: followers, metrics_*, top_3_picks_* if available.
+    Uses 'followers' column to determine leader and top picks.
     """
     if df.empty:
         return create_sample_data(universe)
@@ -95,13 +95,13 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
     # Get most recent row
     latest = uni_df.sort_values('date', ascending=False).iloc[0]
 
-    # --- Extract followers (list of [ticker, strength]) ---
+    # Parse followers column
     followers_raw = latest.get('followers', '[]')
-    followers = safe_parse_list(followers_raw)
+    followers = safe_parse_followers(followers_raw)
     if not isinstance(followers, list):
         followers = []
 
-    # Build top_3 picks from followers (first 3)
+    # Build top_3 picks from followers (first 3 items)
     top_3_picks = []
     for item in followers[:3]:
         if isinstance(item, (list, tuple)) and len(item) >= 2:
@@ -114,25 +114,26 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
         elif isinstance(item, dict) and 'ticker' in item:
             top_3_picks.append({'ticker': item['ticker'], 'score': item.get('score', 0.0)})
 
-    # Fallback: if no followers, try top_3_picks_tickers/scores columns
+    # If no followers, try top_3_picks_tickers/scores as fallback
     if not top_3_picks:
         tickers_str = latest.get('top_3_picks_tickers', '')
         scores_str = latest.get('top_3_picks_scores', '')
-        if tickers_str and scores_str:
-            tickers = safe_parse_list(tickers_str)
-            scores = safe_parse_list(scores_str)
-            if isinstance(tickers, list) and isinstance(scores, list):
+        if tickers_str and scores_str and not pd.isna(tickers_str) and not pd.isna(scores_str):
+            try:
+                tickers = [t.strip() for t in str(tickers_str).split(',') if t.strip()]
+                scores = [float(s.strip()) for s in str(scores_str).split(',') if s.strip()]
                 for t, s in zip(tickers[:3], scores[:3]):
-                    top_3_picks.append({'ticker': str(t), 'score': float(s) if s else 0.0})
+                    top_3_picks.append({'ticker': t, 'score': s})
+            except:
+                pass
 
-    # Ensure we have 3 picks (pad with N/A)
+    # Ensure we have at least 3 picks (pad with N/A)
     while len(top_3_picks) < 3:
         top_3_picks.append({'ticker': 'N/A', 'score': 0.0})
 
-    # --- Determine leader ---
+    # Determine leader: try predicted_leader_etf first, otherwise use first follower's ticker
     leader = latest.get('predicted_leader_etf', 'N/A')
     if pd.isna(leader) or str(leader).strip() in ('', 'N/A'):
-        # Use the first follower as leader if available
         if top_3_picks and top_3_picks[0]['ticker'] != 'N/A':
             leader = top_3_picks[0]['ticker']
         else:
@@ -142,7 +143,7 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
             else:
                 leader = config.EQUITY_BENCHMARK
 
-    # --- Build metrics dict from flat columns ---
+    # Build metrics dict from flat columns
     metrics = {
         'total_return': latest.get('metrics_total_return', 0.0),
         'sharpe_ratio': latest.get('metrics_sharpe_ratio', 0.0),
@@ -153,9 +154,6 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
     for k in metrics:
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
-
-    # Convert metrics to percentages where needed (already stored as decimals)
-    # but keep as is for display.
 
     # Determine benchmark
     if universe == 'fi_commodity':
@@ -183,7 +181,7 @@ def main():
     apply_custom_css()
     st.title("📊 P2 — ETF LINGAM Engine")
 
-    # Sidebar debug info (optional, can be removed later)
+    # Sidebar debug info (optional)
     with st.sidebar:
         st.markdown("### 🔍 Debug Info")
         if st.button("Refresh data"):
@@ -193,7 +191,6 @@ def main():
         if not predictions_df.empty:
             st.success(f"Loaded {len(predictions_df)} predictions")
             st.write("Columns:", list(predictions_df.columns))
-            # Show first row values for inspection
             first = predictions_df.iloc[0]
             st.write("First row (relevant fields):")
             st.json({

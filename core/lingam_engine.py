@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional, List
 from lingam import DirectLiNGAM
-from lingam.bootstrap import bootstrap
 import config
 
 
@@ -74,17 +73,11 @@ class LingamEngine:
         # Fit base model
         self.fit(data)
 
-        # Perform bootstrap
-        result = bootstrap(
-            self.model,
-            data.values,
-            n_samplings=n_samplings,
-            significance_level=self.config.get('significance_level', 0.05)
-        )
+        # Perform bootstrap using the model's bootstrap method
+        bootstrap_result = self.model.bootstrap(data.values, n_sampling=n_samplings)
 
         self.bootstrap_results = {
-            'causal_effects': result.get_causal_effects(),
-            'dependencies': result.get_proabilities(),
+            'result': bootstrap_result,
             'n_samplings': n_samplings,
         }
 
@@ -173,10 +166,21 @@ class LingamEngine:
             cause_idx = self.model.variable_names.index(cause)
             effect_idx = self.model.variable_names.index(effect)
 
-            # Get probability of dependency
-            prob = self.bootstrap_results['dependencies'][effect_idx, cause_idx]
+            # Get causal direction counts from bootstrap results
+            direction_counts = self.bootstrap_results['result'].get_causal_direction_counts(
+                min_causal_effect=config.MIN_CAUSAL_THRESHOLD
+            )
+
+            # Find the probability for the specific direction
+            prob = 0.0
+            for i in range(len(direction_counts['from'])):
+                if (direction_counts['from'][i] == cause_idx and 
+                    direction_counts['to'][i] == effect_idx):
+                    prob = direction_counts['count'][i] / self.bootstrap_results['n_samplings']
+                    break
+
             return prob
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, KeyError):
             return 0.0
 
     def predict_effect(

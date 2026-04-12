@@ -15,7 +15,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import config
 from data.loader import get_universe_data, split_data
-from data.preprocessing import handle_missing_values, remove_outliers
 from core.metrics import calculate_all_metrics
 from core.consensus import ConsensusScorer
 from modules.fi_commodity.causal_discovery import FICausalDiscovery
@@ -76,20 +75,21 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
     print(f"  Consensus leader: {leader_report['consensus_leader']}")
     print(f"  Conviction: {leader_report['consensus_conviction']:.2%}")
 
-    # Compute annualized return on test period
+    # Compute annualized return and other metrics on test period
     metrics = {}
-    if leader_report['consensus_leader'] in returns.columns:
-        # Get test period returns for the leader
-        test_returns = test[leader_report['consensus_leader']].dropna()
+    leader_ticker = leader_report['consensus_leader']
+    if leader_ticker in returns.columns:
+        test_returns = test[leader_ticker].dropna()
         if len(test_returns) > 0:
             ann_return = annualized_return_from_series(test_returns)
-            metrics['annualized_return'] = ann_return
-            # Also compute other metrics for completeness
             full_metrics = calculate_all_metrics(test_returns)
-            metrics['sharpe_ratio'] = full_metrics.get('sharpe_ratio', 0.0)
-            metrics['max_drawdown'] = full_metrics.get('max_drawdown', 0.0)
-            metrics['win_rate'] = full_metrics.get('win_rate', 0.0)
-            metrics['best_day'] = full_metrics.get('best_day', 0.0)
+            metrics = {
+                'annualized_return': ann_return,
+                'sharpe_ratio': full_metrics.get('sharpe_ratio', 0.0),
+                'max_drawdown': full_metrics.get('max_drawdown', 0.0),
+                'win_rate': full_metrics.get('win_rate', 0.0),
+                'best_day': full_metrics.get('best_day', 0.0),
+            }
             print(f"  Annualized Return: {ann_return:.2%}")
             print(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
             print(f"  Max Drawdown: {metrics['max_drawdown']:.2%}")
@@ -179,11 +179,13 @@ def run_shrinking_window_training(universe: str):
         metrics = {}
         leader_metrics = next((p for p in top_3 if p['ticker'] == final_leader), None)
         if leader_metrics:
-            metrics['annualized_return'] = leader_metrics['ann_return']
-            metrics['sharpe_ratio'] = leader_metrics.get('sharpe', 0.0)
-            metrics['max_drawdown'] = leader_metrics.get('max_dd', 0.0)
-            metrics['win_rate'] = 0.0  # Not available from consensus
-            metrics['best_day'] = 0.0
+            metrics = {
+                'annualized_return': leader_metrics['ann_return'],
+                'sharpe_ratio': leader_metrics.get('sharpe', 0.0),
+                'max_drawdown': leader_metrics.get('max_dd', 0.0),
+                'win_rate': 0.0,  # Not available from consensus
+                'best_day': 0.0,
+            }
         else:
             metrics = {'annualized_return': 0.0, 'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'win_rate': 0.0, 'best_day': 0.0}
 
@@ -255,7 +257,9 @@ def main():
         print("\nUploading results to HuggingFace...")
         uploader = HFUploader()
         predictions = []
+        print(f"Number of result entries: {len(results)}")
         for key, result in results.items():
+            print(f"  {key}: signals present = {bool(result and result.get('signals') and result['signals'].get('primary_signal'))}")
             if result and result.get('signals') and result['signals'].get('primary_signal'):
                 formatter = PredictionFormatter()
                 pred = formatter.format_prediction(
@@ -267,8 +271,12 @@ def main():
                 if 'universe' not in pred and 'universe' in result:
                     pred['universe'] = result['universe']
                 predictions.append(pred)
+        print(f"Prepared {len(predictions)} predictions for upload")
         if predictions:
-            uploader.upload_predictions(predictions)
+            upload_result = uploader.upload_predictions(predictions)
+            print(f"Upload result: {upload_result}")
+        else:
+            print("No predictions to upload (missing signals).")
 
     print("\nTraining complete!")
     return results

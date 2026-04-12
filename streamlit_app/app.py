@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-Uses st.metric for clean KPI boxes.
+Uses custom CSS for clean metric boxes.
 """
 
 import streamlit as st
@@ -98,18 +98,23 @@ def extract_prediction(row):
 # Rendering functions
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
-    """Render 5 KPI boxes using Streamlit's native st.metric for clean display."""
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%")
-    with col2:
-        st.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
-    with col3:
-        st.metric("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", delta_color="inverse")
-    with col4:
-        st.metric("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%")
-    with col5:
-        st.metric("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%")
+    """Render 5 KPI boxes with controlled font sizes to prevent truncation."""
+    kpis = [
+        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%"),
+        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}"),
+        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%"),
+        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%"),
+        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%"),
+    ]
+    cols = st.columns(5)
+    for col, (label, value) in zip(cols, kpis):
+        with col:
+            st.markdown(f"""
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 12px 8px; text-align: center; border: 1px solid #e9ecef;">
+                <div style="font-size: 13px; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px;">{label}</div>
+                <div style="font-size: 18px; font-weight: 600; color: #212529; margin-top: 6px;">{value}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 def render_signal_history_table(signals):
     """Placeholder for signal history."""
@@ -125,7 +130,7 @@ def render_prediction_card(data):
         st.info("No prediction available. Run training with --upload.")
         return
 
-    # Hero section using clean HTML with better spacing
+    # Hero section
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
                 border-radius: 16px; padding: 20px 24px; border: 1px solid #d8b4fe; margin-bottom: 20px;">
@@ -153,7 +158,7 @@ def render_prediction_card(data):
     </div>
     """, unsafe_allow_html=True)
 
-    # KPI boxes using st.metric (clean and reliable)
+    # KPI boxes
     render_kpi_boxes(data['metrics'])
 
 # ==============================================================================

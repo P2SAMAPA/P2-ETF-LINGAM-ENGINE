@@ -56,70 +56,56 @@ def load_predictions_from_hf() -> pd.DataFrame:
 def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
     """
     Extract the most recent prediction for a given universe from the parquet data.
-    If no valid prediction exists, return sample data.
+    Assumes flat columns: top_3_picks_tickers, top_3_picks_scores, metrics_*
     """
     if df.empty:
         return create_sample_data(universe)
 
     # Ensure date column is datetime
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'])
-    else:
-        # No date column, cannot determine latest
+    if 'date' not in df.columns:
         return create_sample_data(universe)
+    df['date'] = pd.to_datetime(df['date'])
 
-    # Filter by universe if column exists, otherwise infer from ticker
-    if 'universe' in df.columns:
-        uni_df = df[df['universe'].str.lower() == universe.lower()].copy()
-    else:
-        # Infer: if universe is 'fi_commodity', look for tickers in FI list
-        if universe == 'fi_commodity':
-            allowed_tickers = set(config.FI_COMMODITY_ASSETS + [config.FI_COMMODITY_BENCHMARK])
-        else:
-            allowed_tickers = set(config.EQUITY_ASSETS + [config.EQUITY_BENCHMARK])
-        uni_df = df[df['predicted_leader_etf'].isin(allowed_tickers)].copy()
-
+    # Filter by universe column
+    if 'universe' not in df.columns:
+        return create_sample_data(universe)
+    uni_df = df[df['universe'].str.lower() == universe.lower()].copy()
     if uni_df.empty:
         return create_sample_data(universe)
 
     # Get most recent prediction
     latest = uni_df.sort_values('date', ascending=False).iloc[0]
 
-    # Parse top_3_picks – could be list or JSON string
-    top_3 = latest.get('top_3_picks', [])
-    if isinstance(top_3, str):
-        import json
-        try:
-            top_3 = json.loads(top_3)
-        except:
-            top_3 = []
-    if not top_3 or len(top_3) < 3:
-        # Provide default top 3 picks based on leader
-        leader = latest.get('predicted_leader_etf', 'N/A')
-        top_3 = [
-            {'ticker': leader, 'score': 0.6},
-            {'ticker': 'N/A', 'score': 0.2},
-            {'ticker': 'N/A', 'score': 0.1}
-        ]
+    # Build top_3_picks from flat columns
+    tickers_str = latest.get('top_3_picks_tickers', '')
+    scores_str = latest.get('top_3_picks_scores', '')
+    top_3_picks = []
+    if tickers_str and scores_str and not pd.isna(tickers_str) and not pd.isna(scores_str):
+        tickers = [t.strip() for t in str(tickers_str).split(',')]
+        scores = [float(s.strip()) for s in str(scores_str).split(',')]
+        for t, s in zip(tickers[:3], scores[:3]):
+            top_3_picks.append({'ticker': t, 'score': s})
+    # Fallback if missing
+    while len(top_3_picks) < 3:
+        top_3_picks.append({'ticker': 'N/A', 'score': 0.0})
 
-    # Parse metrics – could be dict or JSON string
-    metrics = latest.get('metrics', {})
-    if isinstance(metrics, str):
-        import json
-        try:
-            metrics = json.loads(metrics)
-        except:
-            metrics = {}
-
-    # Ensure metrics have all required keys
-    default_metrics = {
-        'total_return': 0.0,
-        'sharpe_ratio': 0.0,
-        'max_drawdown': 0.0,
-        'win_rate': 0.0,
-        'best_day': 0.0
+    # Build metrics dict from flat columns
+    metrics = {
+        'total_return': latest.get('metrics_total_return', 0.0),
+        'sharpe_ratio': latest.get('metrics_sharpe_ratio', 0.0),
+        'max_drawdown': latest.get('metrics_max_drawdown', 0.0),
+        'win_rate': latest.get('metrics_win_rate', 0.0),
+        'best_day': latest.get('metrics_best_day', 0.0),
     }
-    default_metrics.update(metrics)
+    # Convert any NaNs to 0
+    for k in metrics:
+        if pd.isna(metrics[k]):
+            metrics[k] = 0.0
+
+    leader = latest.get('predicted_leader_etf', 'N/A')
+    if pd.isna(leader) or leader == '' or leader == 'N/A':
+        # No valid leader in this row, fallback to sample data
+        return create_sample_data(universe)
 
     # Determine benchmark
     if universe == 'fi_commodity':
@@ -128,13 +114,13 @@ def get_latest_prediction(df: pd.DataFrame, universe: str) -> dict:
         benchmark = config.EQUITY_BENCHMARK
 
     return {
-        'leader': latest.get('predicted_leader_etf', 'N/A'),
-        'leader_name': get_etf_display_name(latest.get('predicted_leader_etf', 'N/A')),
+        'leader': leader,
+        'leader_name': get_etf_display_name(leader),
         'conviction': latest.get('causal_confidence', 0.5),
-        'top_3_picks': top_3[:3],
-        'prediction_date': latest['date'].strftime('%Y-%m-%d') if hasattr(latest['date'], 'strftime') else str(latest['date']),
+        'top_3_picks': top_3_picks,
+        'prediction_date': latest['date'].strftime('%Y-%m-%d'),
         'training_mode': latest.get('training_mode', 'fixed'),
-        'metrics': default_metrics,
+        'metrics': metrics,
         'benchmark': benchmark,
     }
 
@@ -160,7 +146,7 @@ def main():
         if not predictions_df.empty:
             st.success(f"Loaded {len(predictions_df)} predictions")
             st.write("Columns:", list(predictions_df.columns))
-            st.write("Sample:", predictions_df.head(2))
+            st.write("Sample:", predictions_df.head(2).to_dict())
         else:
             st.warning("No predictions loaded. Using sample data.")
 

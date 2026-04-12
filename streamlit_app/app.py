@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-No duplicate metrics, no "SAMBA" label.
+Uses st.metric for clean KPI boxes.
 """
 
 import streamlit as st
@@ -72,7 +72,6 @@ def extract_prediction(row):
     if pd.isna(leader) or str(leader).strip() in ('', 'N/A'):
         leader = top_3_picks[0]['ticker'] if top_3_picks[0]['ticker'] != 'N/A' else 'N/A'
 
-    # Metrics directly from flat columns (these are the OOS metrics)
     metrics = {
         'total_return': row.get('metrics_total_return', 0.0),
         'sharpe_ratio': row.get('metrics_sharpe_ratio', 0.0),
@@ -99,26 +98,21 @@ def extract_prediction(row):
 # Rendering functions
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
-    """Render 5 KPI boxes using metrics from the prediction."""
-    cols = st.columns(5)
-    kpis = [
-        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
-        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
-        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
-        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
-        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
-    ]
-    for col, (label, value, color) in zip(cols, kpis):
-        with col:
-            st.markdown(f"""
-            <div style="background: white; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <div style="font-size: 28px; font-weight: 700; color: {color};">{value}</div>
-                <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 8px;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    """Render 5 KPI boxes using Streamlit's native st.metric for clean display."""
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.metric("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%")
+    with col2:
+        st.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
+    with col3:
+        st.metric("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", delta_color="inverse")
+    with col4:
+        st.metric("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%")
+    with col5:
+        st.metric("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%")
 
 def render_signal_history_table(signals):
-    """Placeholder for signal history (can be replaced later)."""
+    """Placeholder for signal history."""
     if not signals:
         st.info("Historical signals not yet stored. Extend training script to save `signal_history`.")
         return
@@ -126,37 +120,40 @@ def render_signal_history_table(signals):
     st.dataframe(df, use_container_width=True)
 
 def render_prediction_card(data):
-    """Render a single prediction card with leader, conviction, top picks, and KPI boxes."""
+    """Render a single prediction card with hero section and KPI boxes."""
     if data is None:
         st.info("No prediction available. Run training with --upload.")
         return
 
-    # Hero section: leader, conviction, top picks, date, mode
+    # Hero section using clean HTML with better spacing
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
-                border-radius: 16px; padding: 24px; border: 1px solid #d8b4fe; margin-bottom: 24px;">
-        <div style="display: flex; justify-content: space-between;">
+                border-radius: 16px; padding: 20px 24px; border: 1px solid #d8b4fe; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
-                <h2 style="font-size: 48px; color: #6B21A8;">{data['leader']}</h2>
-                <p>{data['leader_name']}</p>
+                <h2 style="font-size: 48px; color: #6B21A8; margin: 0;">{data['leader']}</h2>
+                <p style="margin: 4px 0 0 0; color: #6b7280;">{data['leader_name']}</p>
             </div>
             <div style="text-align: right;">
-                <p style="font-size: 12px; color: #6b7280;">Conviction</p>
-                <p style="font-size: 28px; font-weight: 600; color: #6B21A8;">{data['conviction']*100:.1f}%</p>
+                <p style="font-size: 12px; color: #6b7280; margin: 0;">Conviction</p>
+                <p style="font-size: 32px; font-weight: 600; color: #6B21A8; margin: 0;">{data['conviction']*100:.1f}%</p>
             </div>
         </div>
-        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #d8b4fe;">
-            <p><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</p>
-            <p><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</p>
-        </div>
-        <div style="margin-top: 16px; display: flex; gap: 8px;">
-            <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px;">{data['prediction_date']}</span>
-            <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px;">{data['training_mode']}</span>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #d8b4fe; display: flex; justify-content: space-between;">
+            <div>
+                <span style="font-size: 14px;"><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</span>
+                &nbsp;&nbsp;
+                <span style="font-size: 14px;"><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px; font-size:12px;">{data['prediction_date']}</span>
+                <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px; font-size:12px;">{data['training_mode']}</span>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # KPI boxes (metrics) directly below the hero card
+    # KPI boxes using st.metric (clean and reliable)
     render_kpi_boxes(data['metrics'])
 
 # ==============================================================================
@@ -187,14 +184,12 @@ def main():
         with tab:
             st.markdown(f"### {universe.replace('_', ' ').title()} Module")
 
-            # Fixed split
             fixed_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'fixed')]
             fixed_data = None
             if not fixed_rows.empty:
                 latest_fixed = fixed_rows.sort_values('date', ascending=False).iloc[0]
                 fixed_data = extract_prediction(latest_fixed)
 
-            # Shrinking window
             shrink_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'shrinking')]
             shrink_data = None
             if not shrink_rows.empty:
@@ -211,7 +206,6 @@ def main():
 
             st.markdown("---")
             st.markdown("#### Signal History")
-            # Placeholder – replace with real data when available
             render_signal_history_table([])
 
 if __name__ == "__main__":

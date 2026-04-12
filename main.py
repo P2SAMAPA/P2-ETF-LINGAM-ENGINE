@@ -201,13 +201,15 @@ def run_shrinking_window_training(universe: str):
                 if len(leader_returns) >= 20:
                     window_score = scorer.calculate_window_score(leader_returns)
 
+                    # Store the window data including returns for consensus scoring
                     window_results.append({
                         'window_start': window['window_start'],
                         'window_end': window['window_end'],
                         'leader_ticker': causal_results['leader'],
                         'leader_score': causal_results['leader_score'],
                         'consensus_score': window_score,
-                        'causal_results': causal_results
+                        'causal_results': causal_results,
+                        'returns': window['returns']  # Add returns for consensus calculation
                     })
 
                     print(f"    Leader: {causal_results['leader']}, Score: {window_score:.4f}")

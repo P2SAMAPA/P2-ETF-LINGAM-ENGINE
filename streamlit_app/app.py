@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
-Displays fixed-split and consensus (shrinking window) predictions per universe.
+Self-contained dashboard displaying fixed-split and consensus predictions.
 """
 
 import streamlit as st
@@ -15,19 +15,18 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import config
 from streamlit_app.utils import apply_custom_css, get_etf_display_name
-from streamlit_app.components.metrics_display import (
-    render_kpi_boxes,
-    render_comparison_card,
-    render_performance_chart,
-    render_signal_history_table
-)
 
+# ==============================================================================
+# Constants
+# ==============================================================================
 HF_DATASET_REPO = "P2SAMAPA/p2-etf-lingam-results"
 PREDICTIONS_FILE = "predictions.parquet"
 
+# ==============================================================================
+# Data loading & parsing
+# ==============================================================================
 @st.cache_data(ttl=3600)
 def load_predictions() -> pd.DataFrame:
     url = f"https://huggingface.co/datasets/{HF_DATASET_REPO}/resolve/main/{PREDICTIONS_FILE}"
@@ -95,6 +94,101 @@ def extract_prediction(row):
         'benchmark': config.FI_COMMODITY_BENCHMARK if row.get('universe') == 'fi_commodity' else config.EQUITY_BENCHMARK,
     }
 
+# ==============================================================================
+# Rendering functions (self-contained)
+# ==============================================================================
+def render_kpi_boxes(metrics: dict):
+    """Render 5 KPI boxes in a row."""
+    cols = st.columns(5)
+    kpis = [
+        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981"),
+        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#10B981"),
+        ("PEAK→TROUGH", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
+        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
+        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
+    ]
+    for col, (label, value, color) in zip(cols, kpis):
+        with col:
+            st.markdown(f"""
+            <div style="background: white; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #e5e7eb;">
+                <div style="font-size: 28px; font-weight: 700; color: {color};">{value}</div>
+                <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 8px;">{label}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+def render_comparison_card(strategy_name: str, benchmark_name: str, metrics: dict):
+    """Render a comparison card between strategy and benchmark."""
+    cols_html = ""
+    metrics_to_show = [
+        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#EF4444"),
+        ("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
+        ("PEAK→TROUGH", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
+        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.0f}%", "#6B7280"),
+        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#EF4444"),
+    ]
+    for label, value, color in metrics_to_show:
+        cols_html += f"""
+        <div class="metric-box">
+            <div class="metric-value" style="color: {color};">{value}</div>
+            <div class="metric-label">{label}</div>
+        </div>
+        """
+    st.markdown(f"""
+    <style>
+    .comparison-card {{
+        background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb; margin-bottom: 16px;
+    }}
+    .comparison-header {{
+        font-size: 18px; font-weight: 600; color: #6B21A8; margin-bottom: 16px;
+    }}
+    .comparison-grid {{
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;
+    }}
+    .metric-box {{
+        text-align: center; padding: 12px; background: #f9fafb; border-radius: 8px;
+    }}
+    .metric-value {{
+        font-size: 20px; font-weight: 600;
+    }}
+    .metric-label {{
+        font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 4px;
+    }}
+    </style>
+    <div class="comparison-card">
+        <div class="comparison-header">SAMBA {strategy_name} vs {benchmark_name}</div>
+        <div class="comparison-grid">{cols_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_performance_chart(strategy_returns, benchmark_returns, benchmark_name, title):
+    """Simple line chart of cumulative returns."""
+    cum_strategy = (1 + strategy_returns).cumprod()
+    cum_benchmark = (1 + benchmark_returns).cumprod()
+    df_chart = pd.DataFrame({
+        f"SAMBA Strategy": cum_strategy,
+        benchmark_name: cum_benchmark
+    })
+    st.line_chart(df_chart)
+
+def render_signal_history_table(signals):
+    """Render a table of past signals."""
+    if not signals:
+        st.info("No signal history available.")
+        return
+    df = pd.DataFrame(signals)
+    # Rename columns for display
+    df_display = df.rename(columns={
+        'date': 'Date',
+        'ticker': 'ETF',
+        'conviction': 'Conviction',
+        'actual_return': 'Return',
+        'is_hit': 'Hit'
+    })
+    df_display['Conviction'] = df_display['Conviction'].apply(lambda x: f"{x*100:.0f}%")
+    df_display['Return'] = df_display['Return'].apply(lambda x: f"{x*100:.2f}%")
+    df_display['Hit'] = df_display['Hit'].apply(lambda x: "✅" if x else "❌")
+    st.dataframe(df_display[['Date', 'ETF', 'Conviction', 'Return', 'Hit']], use_container_width=True)
+
 def render_prediction_card(data, title):
     """Render a single prediction card."""
     if data is None:
@@ -129,6 +223,9 @@ def render_prediction_card(data, title):
     with col2:
         render_kpi_boxes(data['metrics'])
 
+# ==============================================================================
+# Main app
+# ==============================================================================
 def main():
     st.set_page_config(page_title="P2 — ETF LINGAM Engine", layout="wide")
     apply_custom_css()
@@ -141,7 +238,6 @@ def main():
         df = load_predictions()
         if not df.empty:
             st.success(f"Loaded {len(df)} predictions")
-            # Show summary of available combos
             summary = df.groupby(['universe', 'training_mode']).size().reset_index(name='count')
             st.write("Available predictions:", summary)
         else:
@@ -151,25 +247,22 @@ def main():
         st.stop()
 
     tabs = st.tabs(["Fixed Income / Alts", "Equity Sectors"])
-
     for tab, universe in zip(tabs, ['fi_commodity', 'equity']):
         with tab:
             st.markdown(f"### {universe.replace('_', ' ').title()} Module")
-            # Get fixed split row (most recent)
+            # Fixed split
             fixed_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'fixed')]
             fixed_data = None
             if not fixed_rows.empty:
                 latest_fixed = fixed_rows.sort_values('date', ascending=False).iloc[0]
                 fixed_data = extract_prediction(latest_fixed)
-
-            # Get shrinking window row (most recent)
+            # Shrinking window
             shrink_rows = df[(df['universe'] == universe) & (df['training_mode'] == 'shrinking')]
             shrink_data = None
             if not shrink_rows.empty:
                 latest_shrink = shrink_rows.sort_values('date', ascending=False).iloc[0]
                 shrink_data = extract_prediction(latest_shrink)
 
-            # Display two columns: Fixed Split | Shrinking Window
             col_fixed, col_shrink = st.columns(2)
             with col_fixed:
                 st.markdown("#### 🔹 Fixed Split Training")
@@ -179,21 +272,24 @@ def main():
                 render_prediction_card(shrink_data, "shrinking window")
 
             st.markdown("---")
-            # Optional: placeholders for charts/history (can be customized later)
             st.markdown("#### Strategy Performance (example)")
+            # Generate dummy performance data for demonstration
             dates = pd.date_range('2023-01-01', periods=300, freq='D')
             np.random.seed(42)
             strategy_returns = pd.Series(np.random.randn(300)*0.01+0.0003, index=dates)
             benchmark_returns = pd.Series(np.random.randn(300)*0.008+0.0002, index=dates)
-            # Use fixed data for comparison if available, else placeholder
-            bench = fixed_data['benchmark'] if fixed_data else (shrink_data['benchmark'] if shrink_data else "SPY")
-            render_comparison_card("SAMBA Strategy", bench, fixed_data['metrics'] if fixed_data else {})
-            render_performance_chart(strategy_returns, benchmark_returns, bench, "Strategy vs Benchmark")
+            # Use fixed data's benchmark if available, else fallback
+            benchmark_name = fixed_data['benchmark'] if fixed_data else (shrink_data['benchmark'] if shrink_data else "SPY")
+            render_comparison_card(fixed_data['leader'] if fixed_data else "Strategy", benchmark_name, fixed_data['metrics'] if fixed_data else {})
+            render_performance_chart(strategy_returns, benchmark_returns, benchmark_name, "Cumulative Return")
 
             st.markdown("#### Signal History (placeholder)")
             sample_signals = [
                 {'date': '2024-04-10', 'ticker': 'GLD', 'conviction': 0.999, 'actual_return': -0.0018, 'is_hit': False},
                 {'date': '2024-04-03', 'ticker': 'TLT', 'conviction': 0.75, 'actual_return': 0.023, 'is_hit': True},
+                {'date': '2024-03-27', 'ticker': 'GLD', 'conviction': 0.82, 'actual_return': 0.015, 'is_hit': True},
+                {'date': '2024-03-20', 'ticker': 'HYG', 'conviction': 0.68, 'actual_return': -0.008, 'is_hit': False},
+                {'date': '2024-03-13', 'ticker': 'VNQ', 'conviction': 0.71, 'actual_return': 0.012, 'is_hit': True},
             ]
             render_signal_history_table(sample_signals)
 

@@ -52,9 +52,9 @@ class PredictionFormatter:
                 for s in signals.get('all_signals', [])[:3]
             ],
             'followers': causal_info.get('followers', []),
-            'macro_context': self._format_macro_context(casual_info),
-            'dag_edges': self._format_dag_edges(casual_info),
-            'dag_strengths': self._format_dag_strengths(casual_info),
+            'macro_context': self._format_macro_context(causal_info),
+            'dag_edges': self._format_dag_edges(causal_info),
+            'dag_strengths': self._format_dag_strengths(causal_info),
             'model_version': self.version,
             'training_mode': training_mode,
             'window_start': causal_info.get('window_start', 'N/A'),

@@ -1,12 +1,12 @@
 """
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
-Self-contained dashboard using real backtest data from the predictions file.
+Displays fixed-split and consensus predictions using existing metrics.
+No extra backtest columns required.
 """
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
 from io import BytesIO
 import ast
@@ -58,20 +58,8 @@ def parse_followers(followers_str):
         pass
     return []
 
-def parse_returns(returns_str):
-    """Parse a JSON list of daily returns or cumulative returns."""
-    if pd.isna(returns_str) or not returns_str:
-        return None
-    try:
-        return json.loads(str(returns_str))
-    except:
-        try:
-            return ast.literal_eval(str(returns_str))
-        except:
-            return None
-
 def extract_prediction(row):
-    """Convert a single row (Series) into a prediction dict."""
+    """Convert a row into a prediction dict using existing columns."""
     followers = parse_followers(row.get('followers', '[]'))
     top_3_picks = []
     for item in followers[:3]:
@@ -84,6 +72,7 @@ def extract_prediction(row):
     if pd.isna(leader) or str(leader).strip() in ('', 'N/A'):
         leader = top_3_picks[0]['ticker'] if top_3_picks[0]['ticker'] != 'N/A' else 'N/A'
 
+    # Metrics directly from flat columns (these are the OOS metrics)
     metrics = {
         'total_return': row.get('metrics_total_return', 0.0),
         'sharpe_ratio': row.get('metrics_sharpe_ratio', 0.0),
@@ -95,10 +84,6 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
-    # Real backtest data
-    cum_returns_strategy = parse_returns(row.get('cumulative_returns_strategy', None))
-    cum_returns_benchmark = parse_returns(row.get('cumulative_returns_benchmark', None))
-
     return {
         'leader': leader,
         'leader_name': get_etf_display_name(leader),
@@ -108,103 +93,60 @@ def extract_prediction(row):
         'training_mode': row.get('training_mode', 'fixed'),
         'metrics': metrics,
         'benchmark': config.FI_COMMODITY_BENCHMARK if row.get('universe') == 'fi_commodity' else config.EQUITY_BENCHMARK,
-        'cumulative_returns_strategy': cum_returns_strategy,
-        'cumulative_returns_benchmark': cum_returns_benchmark,
     }
 
 # ==============================================================================
-# Rendering functions (self-contained)
+# Rendering functions
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
+    """Render 5 KPI boxes using metrics from the prediction."""
     cols = st.columns(5)
     kpis = [
-        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981"),
-        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#10B981"),
-        ("PEAK→TROUGH", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
+        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
+        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
+        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
         ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
         ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
     ]
     for col, (label, value, color) in zip(cols, kpis):
         with col:
             st.markdown(f"""
-            <div style="background: white; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #e5e7eb;">
+            <div style="background: white; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 <div style="font-size: 28px; font-weight: 700; color: {color};">{value}</div>
                 <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 8px;">{label}</div>
             </div>
             """, unsafe_allow_html=True)
 
 def render_comparison_card(strategy_name: str, benchmark_name: str, metrics: dict):
-    cols_html = ""
-    metrics_to_show = [
-        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#EF4444"),
-        ("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
-        ("PEAK→TROUGH", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
-        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.0f}%", "#6B7280"),
-        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#EF4444"),
-    ]
-    for label, value, color in metrics_to_show:
-        cols_html += f"""
-        <div class="metric-box">
-            <div class="metric-value" style="color: {color};">{value}</div>
-            <div class="metric-label">{label}</div>
-        </div>
-        """
+    """Small comparison table for the strategy vs benchmark (only metrics)."""
     st.markdown(f"""
-    <style>
-    .comparison-card {{
-        background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb; margin-bottom: 16px;
-    }}
-    .comparison-header {{
-        font-size: 18px; font-weight: 600; color: #6B21A8; margin-bottom: 16px;
-    }}
-    .comparison-grid {{
-        display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;
-    }}
-    .metric-box {{
-        text-align: center; padding: 12px; background: #f9fafb; border-radius: 8px;
-    }}
-    .metric-value {{
-        font-size: 20px; font-weight: 600;
-    }}
-    .metric-label {{
-        font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 4px;
-    }}
-    </style>
-    <div class="comparison-card">
-        <div class="comparison-header">SAMBA {strategy_name} vs {benchmark_name}</div>
-        <div class="comparison-grid">{cols_html}</div>
+    <div style="background: #f9fafb; border-radius: 12px; padding: 16px; border: 1px solid #e5e7eb; margin-top: 16px;">
+        <p style="font-weight: 600; margin-bottom: 12px;">📊 SAMBA {strategy_name} vs {benchmark_name}</p>
+        <table style="width:100%; text-align:center;">
+            <tr>
+                <th>Total Return</th><th>Sharpe</th><th>Max DD</th><th>Win Rate</th><th>Best Day</th>
+            </tr>
+            <tr>
+                <td>{metrics.get('total_return',0)*100:.1f}%</td>
+                <td>{metrics.get('sharpe_ratio',0):.2f}</td>
+                <td>{metrics.get('max_drawdown',0)*100:.1f}%</td>
+                <td>{metrics.get('win_rate',0)*100:.1f}%</td>
+                <td>{metrics.get('best_day',0)*100:.1f}%</td>
+            </tr>
+        </table>
     </div>
     """, unsafe_allow_html=True)
 
-def render_performance_chart(cum_strategy, cum_benchmark, benchmark_name, title):
-    """Plot cumulative returns from lists of floats."""
-    if cum_strategy is None or cum_benchmark is None:
-        st.info("Real backtest data not available for this prediction. Please re-run training with updated `main.py` that stores cumulative returns.")
-        return
-    df_chart = pd.DataFrame({
-        "SAMBA Strategy": cum_strategy,
-        benchmark_name: cum_benchmark
-    })
-    st.line_chart(df_chart)
-
 def render_signal_history_table(signals):
+    """Placeholder for signal history (can be replaced later)."""
     if not signals:
-        st.info("No signal history available.")
+        st.info("Historical signals not yet stored. Extend training script to save `signal_history`.")
         return
     df = pd.DataFrame(signals)
-    df_display = df.rename(columns={
-        'date': 'Date',
-        'ticker': 'ETF',
-        'conviction': 'Conviction',
-        'actual_return': 'Return',
-        'is_hit': 'Hit'
-    })
-    df_display['Conviction'] = df_display['Conviction'].apply(lambda x: f"{x*100:.0f}%")
-    df_display['Return'] = df_display['Return'].apply(lambda x: f"{x*100:.2f}%")
-    df_display['Hit'] = df_display['Hit'].apply(lambda x: "✅" if x else "❌")
-    st.dataframe(df_display[['Date', 'ETF', 'Conviction', 'Return', 'Hit']], use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
 def render_prediction_card(data, title):
+    """Render a single prediction card with leader, conviction, top picks, and metrics."""
     if data is None:
         st.info(f"No {title} prediction available. Run training with --upload.")
         return
@@ -237,14 +179,8 @@ def render_prediction_card(data, title):
     with col2:
         render_kpi_boxes(data['metrics'])
 
-    # Real performance chart if data exists
-    st.markdown("#### Strategy Performance (Real Backtest)")
-    render_performance_chart(
-        data.get('cumulative_returns_strategy'),
-        data.get('cumulative_returns_benchmark'),
-        data['benchmark'],
-        "Cumulative Return"
-    )
+    # Add a simple comparison card below the KPI boxes (optional)
+    render_comparison_card(data['leader'], data['benchmark'], data['metrics'])
 
 # ==============================================================================
 # Main app
@@ -295,9 +231,9 @@ def main():
                 render_prediction_card(shrink_data, "shrinking window")
 
             st.markdown("---")
-            st.markdown("#### Signal History (Real)")
-            # Placeholder for actual signal history – replace with real data when available
-            st.info("Historical signals not yet stored. To enable, extend training script to save `signal_history` column.")
+            st.markdown("#### Signal History")
+            # Placeholder – replace with real data when available
+            render_signal_history_table([])
 
 if __name__ == "__main__":
     main()

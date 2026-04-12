@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
-Self-contained dashboard displaying fixed-split and consensus predictions.
+Self-contained dashboard using real backtest data from the predictions file.
 """
 
 import streamlit as st
@@ -58,6 +58,18 @@ def parse_followers(followers_str):
         pass
     return []
 
+def parse_returns(returns_str):
+    """Parse a JSON list of daily returns or cumulative returns."""
+    if pd.isna(returns_str) or not returns_str:
+        return None
+    try:
+        return json.loads(str(returns_str))
+    except:
+        try:
+            return ast.literal_eval(str(returns_str))
+        except:
+            return None
+
 def extract_prediction(row):
     """Convert a single row (Series) into a prediction dict."""
     followers = parse_followers(row.get('followers', '[]'))
@@ -83,6 +95,10 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
+    # Real backtest data
+    cum_returns_strategy = parse_returns(row.get('cumulative_returns_strategy', None))
+    cum_returns_benchmark = parse_returns(row.get('cumulative_returns_benchmark', None))
+
     return {
         'leader': leader,
         'leader_name': get_etf_display_name(leader),
@@ -92,13 +108,14 @@ def extract_prediction(row):
         'training_mode': row.get('training_mode', 'fixed'),
         'metrics': metrics,
         'benchmark': config.FI_COMMODITY_BENCHMARK if row.get('universe') == 'fi_commodity' else config.EQUITY_BENCHMARK,
+        'cumulative_returns_strategy': cum_returns_strategy,
+        'cumulative_returns_benchmark': cum_returns_benchmark,
     }
 
 # ==============================================================================
 # Rendering functions (self-contained)
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
-    """Render 5 KPI boxes in a row."""
     cols = st.columns(5)
     kpis = [
         ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981"),
@@ -117,7 +134,6 @@ def render_kpi_boxes(metrics: dict):
             """, unsafe_allow_html=True)
 
 def render_comparison_card(strategy_name: str, benchmark_name: str, metrics: dict):
-    """Render a comparison card between strategy and benchmark."""
     cols_html = ""
     metrics_to_show = [
         ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#EF4444"),
@@ -160,23 +176,22 @@ def render_comparison_card(strategy_name: str, benchmark_name: str, metrics: dic
     </div>
     """, unsafe_allow_html=True)
 
-def render_performance_chart(strategy_returns, benchmark_returns, benchmark_name, title):
-    """Simple line chart of cumulative returns."""
-    cum_strategy = (1 + strategy_returns).cumprod()
-    cum_benchmark = (1 + benchmark_returns).cumprod()
+def render_performance_chart(cum_strategy, cum_benchmark, benchmark_name, title):
+    """Plot cumulative returns from lists of floats."""
+    if cum_strategy is None or cum_benchmark is None:
+        st.info("Real backtest data not available for this prediction. Please re-run training with updated `main.py` that stores cumulative returns.")
+        return
     df_chart = pd.DataFrame({
-        f"SAMBA Strategy": cum_strategy,
+        "SAMBA Strategy": cum_strategy,
         benchmark_name: cum_benchmark
     })
     st.line_chart(df_chart)
 
 def render_signal_history_table(signals):
-    """Render a table of past signals."""
     if not signals:
         st.info("No signal history available.")
         return
     df = pd.DataFrame(signals)
-    # Rename columns for display
     df_display = df.rename(columns={
         'date': 'Date',
         'ticker': 'ETF',
@@ -190,7 +205,6 @@ def render_signal_history_table(signals):
     st.dataframe(df_display[['Date', 'ETF', 'Conviction', 'Return', 'Hit']], use_container_width=True)
 
 def render_prediction_card(data, title):
-    """Render a single prediction card."""
     if data is None:
         st.info(f"No {title} prediction available. Run training with --upload.")
         return
@@ -222,6 +236,15 @@ def render_prediction_card(data, title):
         """, unsafe_allow_html=True)
     with col2:
         render_kpi_boxes(data['metrics'])
+
+    # Real performance chart if data exists
+    st.markdown("#### Strategy Performance (Real Backtest)")
+    render_performance_chart(
+        data.get('cumulative_returns_strategy'),
+        data.get('cumulative_returns_benchmark'),
+        data['benchmark'],
+        "Cumulative Return"
+    )
 
 # ==============================================================================
 # Main app
@@ -272,26 +295,9 @@ def main():
                 render_prediction_card(shrink_data, "shrinking window")
 
             st.markdown("---")
-            st.markdown("#### Strategy Performance (example)")
-            # Generate dummy performance data for demonstration
-            dates = pd.date_range('2023-01-01', periods=300, freq='D')
-            np.random.seed(42)
-            strategy_returns = pd.Series(np.random.randn(300)*0.01+0.0003, index=dates)
-            benchmark_returns = pd.Series(np.random.randn(300)*0.008+0.0002, index=dates)
-            # Use fixed data's benchmark if available, else fallback
-            benchmark_name = fixed_data['benchmark'] if fixed_data else (shrink_data['benchmark'] if shrink_data else "SPY")
-            render_comparison_card(fixed_data['leader'] if fixed_data else "Strategy", benchmark_name, fixed_data['metrics'] if fixed_data else {})
-            render_performance_chart(strategy_returns, benchmark_returns, benchmark_name, "Cumulative Return")
-
-            st.markdown("#### Signal History (placeholder)")
-            sample_signals = [
-                {'date': '2024-04-10', 'ticker': 'GLD', 'conviction': 0.999, 'actual_return': -0.0018, 'is_hit': False},
-                {'date': '2024-04-03', 'ticker': 'TLT', 'conviction': 0.75, 'actual_return': 0.023, 'is_hit': True},
-                {'date': '2024-03-27', 'ticker': 'GLD', 'conviction': 0.82, 'actual_return': 0.015, 'is_hit': True},
-                {'date': '2024-03-20', 'ticker': 'HYG', 'conviction': 0.68, 'actual_return': -0.008, 'is_hit': False},
-                {'date': '2024-03-13', 'ticker': 'VNQ', 'conviction': 0.71, 'actual_return': 0.012, 'is_hit': True},
-            ]
-            render_signal_history_table(sample_signals)
+            st.markdown("#### Signal History (Real)")
+            # Placeholder for actual signal history – replace with real data when available
+            st.info("Historical signals not yet stored. To enable, extend training script to save `signal_history` column.")
 
 if __name__ == "__main__":
     main()

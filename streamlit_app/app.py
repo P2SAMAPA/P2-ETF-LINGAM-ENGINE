@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-Equal-height metric boxes for clean alignment.
+First metric shows Annualized Return (from metrics_annualized_return column).
 """
 
 import streamlit as st
@@ -14,7 +14,6 @@ import json
 import sys
 import os
 
-# Ensure we can import config from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from streamlit_app.utils import apply_custom_css, get_etf_display_name
@@ -74,7 +73,7 @@ def extract_prediction(row):
         leader = top_3_picks[0]['ticker'] if top_3_picks[0]['ticker'] != 'N/A' else 'N/A'
 
     metrics = {
-        'total_return': row.get('metrics_total_return', 0.0),
+        'annualized_return': row.get('metrics_annualized_return', 0.0),
         'sharpe_ratio': row.get('metrics_sharpe_ratio', 0.0),
         'max_drawdown': row.get('metrics_max_drawdown', 0.0),
         'win_rate': row.get('metrics_win_rate', 0.0),
@@ -102,7 +101,7 @@ def render_kpi_boxes(metrics: dict):
     """Render 5 KPI boxes with equal height and centered content."""
     col1, col2, col3, col4, col5 = st.columns(5, gap="small")
     kpis = [
-        (col1, "Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
+        (col1, "Ann. Return", f"{metrics.get('annualized_return', 0)*100:.1f}%", "#10B981" if metrics.get('annualized_return',0)>=0 else "#EF4444"),
         (col2, "Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
         (col3, "Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
         (col4, "Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),

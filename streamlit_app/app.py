@@ -2,7 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-Uses equal-height metric boxes.
+Equal-height metric boxes for clean alignment.
 """
 
 import streamlit as st
@@ -12,8 +12,9 @@ from io import BytesIO
 import ast
 import json
 import sys
-os
+import os
 
+# Ensure we can import config from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from streamlit_app.utils import apply_custom_css, get_etf_display_name
@@ -99,15 +100,15 @@ def extract_prediction(row):
 # ==============================================================================
 def render_kpi_boxes(metrics: dict):
     """Render 5 KPI boxes with equal height and centered content."""
-    cols = st.columns(5, gap="small")
+    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
     kpis = [
-        ("Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
-        ("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
-        ("Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
-        ("Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
-        ("Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
+        (col1, "Total Return", f"{metrics.get('total_return', 0)*100:.1f}%", "#10B981" if metrics.get('total_return',0)>=0 else "#EF4444"),
+        (col2, "Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
+        (col3, "Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
+        (col4, "Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
+        (col5, "Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
     ]
-    for col, (label, value, color) in zip(cols, kpis):
+    for col, label, value, color in kpis:
         with col:
             st.markdown(f"""
             <div style="background: white; border-radius: 12px; padding: 12px 4px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); height: 90px; display: flex; flex-direction: column; justify-content: center;">

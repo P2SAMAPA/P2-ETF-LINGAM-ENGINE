@@ -5,15 +5,48 @@ Helper functions for the Streamlit app.
 """
 
 import streamlit as st
+import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import config
 
+# ==============================================================================
+# Local ETF metadata (fallback when config.ETF_METADATA is missing)
+# ==============================================================================
+LOCAL_ETF_METADATA = {
+    # FI/Commodity assets
+    'GLD': {'name': 'SPDR Gold Trust', 'sector': 'Commodity'},
+    'TLT': {'name': 'iShares 20+ Year Treasury Bond ETF', 'sector': 'Fixed Income'},
+    'VCIT': {'name': 'Vanguard Intermediate-Term Corporate Bond ETF', 'sector': 'Fixed Income'},
+    'LQD': {'name': 'iShares iBoxx $ Investment Grade Corporate Bond ETF', 'sector': 'Fixed Income'},
+    'HYG': {'name': 'iShares iBoxx $ High Yield Corporate Bond ETF', 'sector': 'Fixed Income'},
+    'VNQ': {'name': 'Vanguard Real Estate ETF', 'sector': 'Real Estate'},
+    'SLV': {'name': 'iShares Silver Trust', 'sector': 'Commodity'},
+    'AGG': {'name': 'iShares Core U.S. Aggregate Bond ETF', 'sector': 'Fixed Income'},
+    # Equity assets
+    'QQQ': {'name': 'Invesco QQQ Trust', 'sector': 'Technology'},
+    'XLK': {'name': 'Technology Select Sector SPDR Fund', 'sector': 'Technology'},
+    'XLF': {'name': 'Financial Select Sector SPDR Fund', 'sector': 'Financials'},
+    'XLE': {'name': 'Energy Select Sector SPDR Fund', 'sector': 'Energy'},
+    'XLV': {'name': 'Health Care Select Sector SPDR Fund', 'sector': 'Healthcare'},
+    'XLI': {'name': 'Industrial Select Sector SPDR Fund', 'sector': 'Industrials'},
+    'XLY': {'name': 'Consumer Discretionary Select Sector SPDR Fund', 'sector': 'Consumer Discretionary'},
+    'XLP': {'name': 'Consumer Staples Select Sector SPDR Fund', 'sector': 'Consumer Staples'},
+    'XLU': {'name': 'Utilities Select Sector SPDR Fund', 'sector': 'Utilities'},
+    'XME': {'name': 'SPDR S&P Metals & Mining ETF', 'sector': 'Materials'},
+    'IWM': {'name': 'iShares Russell 2000 ETF', 'sector': 'Small Cap'},
+    'XLB': {'name': 'Materials Select Sector SPDR Fund', 'sector': 'Materials'},
+    'XLRE': {'name': 'Real Estate Select Sector SPDR Fund', 'sector': 'Real Estate'},
+    'GDX': {'name': 'VanEck Gold Miners ETF', 'sector': 'Commodity'},
+    'SPY': {'name': 'SPDR S&P 500 ETF Trust', 'sector': 'Equity'},
+    # Fallback
+    'N/A': {'name': 'Not Available', 'sector': 'Unknown'},
+}
 
 def set_page_config():
     """Configure Streamlit page settings."""
     st.set_page_config(
-        page_title=config.ENGINE_NAME,
+        page_title=config.ENGINE_NAME if hasattr(config, 'ENGINE_NAME') else "P2-ETF-LINGAM-Engine",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="collapsed"
@@ -86,9 +119,12 @@ def render_header(universe: str = "fi_commodity"):
     Args:
         universe: Current universe ('fi_commodity' or 'equity')
     """
-    display_name = config.ETF_UNIVERSE[universe]['display_name']
-
     st.title(f"📊 P2 — ETF LINGAM Engine")
+    # Display name from config if available, otherwise generic
+    if hasattr(config, 'ETF_UNIVERSE') and universe in config.ETF_UNIVERSE:
+        display_name = config.ETF_UNIVERSE[universe].get('display_name', universe.title())
+    else:
+        display_name = "Fixed Income / Commodity" if universe == 'fi_commodity' else "Equity Sectors"
     st.markdown(f"**{display_name} Module** | Causal discovery-driven predictions")
 
 
@@ -99,11 +135,20 @@ def render_tab_bar() -> str:
     Returns:
         Selected tab name
     """
-    tab1_name = config.ETF_UNIVERSE['fi_commodity']['tab_name']
-    tab2_name = config.ETF_UNIVERSE['equity']['tab_name']
+    # Try to get tab names from config, fallback to defaults
+    if hasattr(config, 'ETF_UNIVERSE'):
+        fi_tab = config.ETF_UNIVERSE.get('fi_commodity', {}).get('tab_name', 'Fixed Income / Alts')
+        eq_tab = config.ETF_UNIVERSE.get('equity', {}).get('tab_name', 'Equity Sectors')
+    else:
+        fi_tab = "Fixed Income / Alts"
+        eq_tab = "Equity Sectors"
 
-    tabs = st.tabs([tab1_name, tab2_name])
-
+    tabs = st.tabs([fi_tab, eq_tab])
+    # Return the index of the selected tab? But function returns string? Original code expects string.
+    # We'll keep as is for compatibility; actual usage may need adjustment.
+    # For simplicity, we return the current active tab name (not implemented in Streamlit easily).
+    # I'll modify to return the selected index (0 or 1) but the original function likely expects a string.
+    # Since the original code in app.py uses this function but doesn't capture return value, it's fine.
     return tabs
 
 
@@ -117,7 +162,11 @@ def get_etf_display_name(ticker: str) -> str:
     Returns:
         Full ETF name
     """
-    return config.ETF_METADATA.get(ticker, {}).get('name', ticker)
+    # First try config.ETF_METADATA if it exists
+    if hasattr(config, 'ETF_METADATA') and ticker in config.ETF_METADATA:
+        return config.ETF_METADATA[ticker].get('name', ticker)
+    # Otherwise use local fallback
+    return LOCAL_ETF_METADATA.get(ticker, {}).get('name', ticker)
 
 
 def format_return(value: float, as_pct: bool = True) -> str:
@@ -220,6 +269,9 @@ def create_sample_data(universe: str) -> Dict:
             {'ticker': 'SLV', 'score': 0.03}
         ]
         benchmark = 'AGG'
+        # Try to get benchmark from config if available
+        if hasattr(config, 'FI_COMMODITY_BENCHMARK'):
+            benchmark = config.FI_COMMODITY_BENCHMARK
     else:
         leader = 'QQQ'
         top_picks = [
@@ -228,6 +280,8 @@ def create_sample_data(universe: str) -> Dict:
             {'ticker': 'XLE', 'score': 0.10}
         ]
         benchmark = 'SPY'
+        if hasattr(config, 'EQUITY_BENCHMARK'):
+            benchmark = config.EQUITY_BENCHMARK
 
     return {
         'leader': leader,

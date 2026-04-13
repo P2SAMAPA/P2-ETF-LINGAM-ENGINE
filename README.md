@@ -9,6 +9,7 @@ A causal discovery-driven quantitative trading engine using LiNGAM (Linear Non-G
 - **Leader Identification**: Identifies leading ETFs that drive other assets
 - **Shrinking Window Consensus**: Weighted scoring across multiple training windows
 - **Streamlit Dashboard**: SAMBA-style visualization with hero cards and performance metrics
+- [ Tried kernel but took more than 6 hours so stuck to pwling, similarly for Shrinking Windows, no bootstrapping to reduce training hours]
 
 ## Universe Configuration
 

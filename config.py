@@ -79,15 +79,12 @@ MACRO_VARIABLES = [
 ]
 
 # ==============================================================================
-# LINGAM CONFIGURATION
+# LINGAM CONFIGURATION (single measure: pwling, 100 bootstraps)
 # ==============================================================================
-# List of causal measures to try on fixed split only (both will be tested)
-CAUSAL_MEASURES = ["pwling", "kernel"]
-
 LINGAM_CONFIG = {
-    "measure": "pwling",           # default, but we will override
+    "measure": "pwling",
     "bootstrap": True,
-    "n_samplings": 100,            # original value (not 200, not 50)
+    "n_samplings": 200,
     "significance_level": 0.05,
     "subset_variable_names": None,
 }

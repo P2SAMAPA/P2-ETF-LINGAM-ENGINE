@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Main Training Script
 =========================================
-Optimized: determines best causal measure on fixed split, then forces 'pwling' for shrinking windows.
+Simplified: uses only pwling measure, 100 bootstrap samples.
 """
 
 import pandas as pd
@@ -19,8 +19,10 @@ from core.metrics import calculate_all_metrics
 from core.consensus import ConsensusScorer
 from modules.fi_commodity.causal_discovery import FICausalDiscovery
 from modules.fi_commodity.leader_identifier import FILEaderIdentifier
+from modules.fi_commodity.signal_generator import FISignalGenerator
 from modules.equity.causal_discovery import EquityCausalDiscovery
 from modules.equity.leader_identifier import EquityLeaderIdentifier
+from modules.equity.signal_generator import EquitySignalGenerator
 from output.predictions import PredictionFormatter
 from output.hf_uploader import HFUploader
 
@@ -33,105 +35,41 @@ def annualized_return_from_series(returns: pd.Series, periods_per_year: int = 25
     return (1 + total_return) ** (periods_per_year / n_days) - 1
 
 
-def determine_best_measure_fixed(universe: str, use_bootstrap: bool = True):
-    """
-    Run fixed split for each causal measure and return the measure that yields
-    the highest test‑period annualized return for the leader ETF.
-    Also returns the full result dictionary for that best measure.
-    """
-    print(f"\n--- Determining best causal measure for {universe} (fixed split) ---")
+def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
+    print(f"\n{'='*60}")
+    print(f"Running FIXED SPLIT training for {universe}")
+    print(f"{'='*60}\n")
+
     returns = get_universe_data(universe)
     train, val, test = split_data(returns)
 
-    best_ann_return = -np.inf
-    best_result = None
-    best_measure = None
+    print(f"  Train: {len(train)} samples")
+    print(f"  Val: {len(val)} samples")
+    print(f"  Test: {len(test)} samples")
 
-    for measure in config.CAUSAL_MEASURES:
-        print(f"\nTrying measure: {measure}")
-        if universe == 'fi_commodity':
-            causal_discovery = FICausalDiscovery()
-            leader_identifier = FILEaderIdentifier()
-        else:
-            causal_discovery = EquityCausalDiscovery()
-            leader_identifier = EquityLeaderIdentifier()
+    if universe == 'fi_commodity':
+        causal_discovery = FICausalDiscovery()
+        leader_identifier = FILEaderIdentifier()
+        signal_generator = FISignalGenerator()
+    else:
+        causal_discovery = EquityCausalDiscovery()
+        leader_identifier = EquityLeaderIdentifier()
+        signal_generator = EquitySignalGenerator()
 
-        causal_discovery.lingam.config['measure'] = measure
+    print("\nRunning causal discovery with pwling...")
+    data = causal_discovery.prepare_data(train, val)
+    causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap)
 
-        data = causal_discovery.prepare_data(train, val)
-        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap)
+    leader_ticker = causal_results.get('leader', 'N/A')
+    print(f"  Leader: {leader_ticker}")
+    print(f"  Causal edges found: {len(causal_results.get('causal_edges', []))}")
 
-        leader_ticker = causal_results.get('leader', 'N/A')
-        print(f"  Leader: {leader_ticker}")
-
-        if leader_ticker in returns.columns:
-            test_returns = test[leader_ticker].dropna()
-            if len(test_returns) > 0:
-                ann_return = annualized_return_from_series(test_returns)
-                print(f"  Annualized return (test period): {ann_return:.2%}")
-                if ann_return > best_ann_return:
-                    best_ann_return = ann_return
-                    best_measure = measure
-                    best_result = {
-                        'causal_results': causal_results,
-                        'leader_ticker': leader_ticker,
-                        'ann_return': ann_return,
-                        'train': train,
-                        'val': val,
-                        'test': test,
-                        'returns': returns,
-                        'leader_identifier': leader_identifier,
-                        'causal_discovery': causal_discovery,
-                    }
-            else:
-                print(f"  No test returns for leader {leader_ticker}")
-        else:
-            print(f"  Leader {leader_ticker} not in returns")
-
-    if best_result is None:
-        print("WARNING: No measure produced a valid leader. Using first measure as fallback.")
-        best_measure = config.CAUSAL_MEASURES[0]
-        causal_discovery = FICausalDiscovery() if universe == 'fi_commodity' else EquityCausalDiscovery()
-        causal_discovery.lingam.config['measure'] = best_measure
-        data = causal_discovery.prepare_data(train, val)
-        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap)
-        leader_ticker = causal_results.get('leader', 'N/A')
-        best_result = {
-            'causal_results': causal_results,
-            'leader_ticker': leader_ticker,
-            'ann_return': 0.0,
-            'train': train,
-            'val': val,
-            'test': test,
-            'returns': returns,
-            'leader_identifier': leader_identifier,
-            'causal_discovery': causal_discovery,
-        }
-
-    print(f"\n=== Best measure for {universe} fixed split: {best_measure} (annualized return {best_result['ann_return']:.2%}) ===")
-    return best_measure, best_result
-
-
-def run_fixed_split_training_from_best(universe: str, best_measure: str, best_result: dict):
-    """
-    Run fixed split training using the pre‑determined best measure and result.
-    """
-    print(f"\n{'='*60}")
-    print(f"Running FIXED SPLIT training for {universe} using best measure: {best_measure}")
-    print(f"{'='*60}\n")
-
-    causal_discovery = best_result['causal_discovery']
-    causal_results = best_result['causal_results']
-    leader_ticker = best_result['leader_ticker']
-    ann_return = best_result['ann_return']
-    train = best_result['train']
-    test = best_result['test']
-    returns = best_result['returns']
-
+    # Compute test period annualized return
     metrics = {}
     if leader_ticker in returns.columns:
         test_returns = test[leader_ticker].dropna()
         if len(test_returns) > 0:
+            ann_return = annualized_return_from_series(test_returns)
             full_metrics = calculate_all_metrics(test_returns)
             metrics = {
                 'annualized_return': ann_return,
@@ -140,14 +78,23 @@ def run_fixed_split_training_from_best(universe: str, best_measure: str, best_re
                 'win_rate': full_metrics.get('win_rate', 0.0),
                 'best_day': full_metrics.get('best_day', 0.0),
             }
+            print(f"  Annualized Return (test): {ann_return:.2%}")
+            print(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
+            print(f"  Max Drawdown: {metrics['max_drawdown']:.2%}")
 
-    signals = {
-        'primary_signal': {'ticker': leader_ticker, 'ann_return': ann_return},
-        'confidence': causal_results.get('leader_score', 0.0),
-        'all_signals': causal_discovery.get_leader_predictions()[:3],
-        'universe': universe,
-        'date': config.PREDICTION_DATE,
-    }
+    # Build signals
+    signals = signal_generator.generate_signals(
+        {'consensus_leader': leader_ticker, 'consensus_conviction': causal_results.get('leader_score', 0.0)},
+        returns, config.PREDICTION_DATE
+    )
+    if signals is None or 'primary_signal' not in signals:
+        signals = {
+            'primary_signal': {'ticker': leader_ticker, 'ann_return': metrics.get('annualized_return', 0.0)},
+            'confidence': causal_results.get('leader_score', 0.0),
+            'all_signals': [],
+            'universe': universe,
+            'date': config.PREDICTION_DATE,
+        }
 
     print(f"  Primary signal: {signals['primary_signal']['ticker']}")
     print(f"  Confidence: {signals['confidence']:.4f}")
@@ -159,18 +106,13 @@ def run_fixed_split_training_from_best(universe: str, best_measure: str, best_re
         'signals': signals,
         'metrics': metrics,
         'train_period': f"{train.index[0]} to {train.index[-1]}",
-        'test_period': f"{test.index[0]} to {test.index[-1]}",
-        'selected_measure': best_measure
+        'test_period': f"{test.index[0]} to {test.index[-1]}"
     }
 
 
 def run_shrinking_window_training(universe: str):
-    """
-    Run shrinking window training ALWAYS using 'pwling' measure for speed.
-    """
-    measure = "pwling"   # force pwling
     print(f"\n{'='*60}")
-    print(f"Running SHRINKING WINDOW training for {universe} using measure: {measure}")
+    print(f"Running SHRINKING WINDOW training for {universe}")
     print(f"{'='*60}\n")
 
     returns = get_universe_data(universe)
@@ -194,7 +136,6 @@ def run_shrinking_window_training(universe: str):
     for i, window in enumerate(windows):
         print(f"\n  Window {i+1}/{len(windows)}: {window['window_start']} to {window['window_end']}")
         causal_discovery = FICausalDiscovery() if universe == 'fi_commodity' else EquityCausalDiscovery()
-        causal_discovery.lingam.config['measure'] = measure
         data = causal_discovery.prepare_data(window['returns'])
         causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap=False)
 
@@ -214,7 +155,7 @@ def run_shrinking_window_training(universe: str):
                 print(f"    Leader: {causal_results['leader']}, Score: {window_score:.4f}")
 
     if not window_results:
-        print("No valid window results. Returning empty.")
+        print("No valid window results.")
         return {
             'universe': universe,
             'training_mode': 'shrinking',
@@ -225,8 +166,7 @@ def run_shrinking_window_training(universe: str):
             'n_windows': 0,
             'signals': None,
             'metrics': {},
-            'causal_results': {},
-            'selected_measure': measure
+            'causal_results': {}
         }
 
     assets = config.FI_COMMODITY_ASSETS if universe == 'fi_commodity' else config.EQUITY_ASSETS
@@ -268,8 +208,7 @@ def run_shrinking_window_training(universe: str):
         'n_windows': len(window_results),
         'signals': signals,
         'metrics': metrics,
-        'causal_results': causal_results,
-        'selected_measure': measure
+        'causal_results': causal_results
     }
 
 
@@ -284,23 +223,16 @@ def main():
 
     results = {}
 
-    # Determine best measure per universe using fixed split (only if fixed split is requested)
-    best_measures = {}
-    if args.mode in ['fixed', 'both']:
-        if args.universe in ['fi_commodity', 'all']:
-            best_measure, best_fixed_result = determine_best_measure_fixed('fi_commodity', args.bootstrap)
-            best_measures['fi_commodity'] = best_measure
-            results['fi_commodity_fixed'] = run_fixed_split_training_from_best('fi_commodity', best_measure, best_fixed_result)
-        if args.universe in ['equity', 'all']:
-            best_measure, best_fixed_result = determine_best_measure_fixed('equity', args.bootstrap)
-            best_measures['equity'] = best_measure
-            results['equity_fixed'] = run_fixed_split_training_from_best('equity', best_measure, best_fixed_result)
-
-    # Shrinking window always uses pwling (no measure selection)
-    if args.mode in ['shrinking', 'both']:
-        if args.universe in ['fi_commodity', 'all']:
+    if args.universe in ['fi_commodity', 'all']:
+        if args.mode in ['fixed', 'both']:
+            results['fi_commodity_fixed'] = run_fixed_split_training('fi_commodity', args.bootstrap)
+        if args.mode in ['shrinking', 'both']:
             results['fi_commodity_shrinking'] = run_shrinking_window_training('fi_commodity')
-        if args.universe in ['equity', 'all']:
+
+    if args.universe in ['equity', 'all']:
+        if args.mode in ['fixed', 'both']:
+            results['equity_fixed'] = run_fixed_split_training('equity', args.bootstrap)
+        if args.mode in ['shrinking', 'both']:
             results['equity_shrinking'] = run_shrinking_window_training('equity')
 
     if args.output_file:

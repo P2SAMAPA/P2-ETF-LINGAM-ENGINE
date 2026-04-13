@@ -142,7 +142,7 @@ def run_shrinking_window_training(universe: str):
         print(f"\n  Window {i+1}/{len(windows)}: {window['window_start']} to {window['window_end']}")
         causal_discovery = FICausalDiscovery() if universe == 'fi_commodity' else EquityCausalDiscovery()
         data = causal_discovery.prepare_data(window['returns'])
-        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap=True)
+        causal_results = causal_discovery.discover_causal_structure(data, use_bootstrap=False)
 
         if causal_results['leader'] and causal_results['leader'] in window['returns'].columns:
             leader_returns = window['returns'][causal_results['leader']].dropna()

@@ -82,12 +82,17 @@ def run_fixed_split_training(universe: str, use_bootstrap: bool = True):
             print(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
             print(f"  Max Drawdown: {metrics['max_drawdown']:.2%}")
 
-    # Build signals
-    signals = signal_generator.generate_signals(
-        {'consensus_leader': leader_ticker, 'consensus_conviction': causal_results.get('leader_score', 0.0)},
-        returns, config.PREDICTION_DATE
-    )
-    if signals is None or 'primary_signal' not in signals:
+    # Generate signals with fallback
+    try:
+        signals = signal_generator.generate_signals(
+            {'consensus_leader': leader_ticker, 'consensus_conviction': causal_results.get('leader_score', 0.0)},
+            returns, config.PREDICTION_DATE
+        )
+    except Exception:
+        signals = None
+
+    if signals is None or 'primary_signal' not in signals or signals['primary_signal'] is None:
+        print("  Warning: signal_generator returned None. Using fallback signals.")
         signals = {
             'primary_signal': {'ticker': leader_ticker, 'ann_return': metrics.get('annualized_return', 0.0)},
             'confidence': causal_results.get('leader_score', 0.0),

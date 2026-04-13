@@ -84,7 +84,7 @@ MACRO_VARIABLES = [
 LINGAM_CONFIG = {
     "measure": "pwling",
     "bootstrap": True,
-    "n_samplings": 200,
+    "n_samplings": 500,
     "significance_level": 0.05,
     "subset_variable_names": None,
 }

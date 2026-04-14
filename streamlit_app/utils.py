@@ -51,6 +51,14 @@ try:
 except ImportError:
     HAS_TRADING_CALENDAR = False
 
+# Try to import pytz for timezone support
+try:
+    import pytz
+    HAS_PYTZ = True
+except ImportError:
+    HAS_PYTZ = False
+
+
 def set_page_config():
     """Configure Streamlit page settings."""
     st.set_page_config(
@@ -136,12 +144,12 @@ def render_header(universe: str = "fi_commodity"):
     st.markdown(f"**{display_name} Module** | Causal discovery-driven predictions")
 
 
-def render_tab_bar() -> str:
+def render_tab_bar():
     """
     Render the tab navigation bar.
 
     Returns:
-        Selected tab name
+        Selected tab object
     """
     # Try to get tab names from config, fallback to defaults
     if hasattr(config, 'ETF_UNIVERSE'):
@@ -152,11 +160,6 @@ def render_tab_bar() -> str:
         eq_tab = "Equity Sectors"
 
     tabs = st.tabs([fi_tab, eq_tab])
-    # Return the index of the selected tab? But function returns string? Original code expects string.
-    # We'll keep as is for compatibility; actual usage may need adjustment.
-    # For simplicity, we return the current active tab name (not implemented in Streamlit easily).
-    # I'll modify to return the selected index (0 or 1) but the original function likely expects a string.
-    # Since the original code in app.py uses this function but doesn't capture return value, it's fine.
     return tabs
 
 
@@ -214,41 +217,83 @@ def format_date(date_str: str) -> str:
 
 def calculate_next_trading_day(as_of_date=None):
     """
-    Calculate the next US stock market trading day (NYSE calendar).
-    Accounts for weekends AND US federal holidays when pandas is available.
+    Calculate the correct US stock market trading day for predictions.
+    
+    Logic:
+    - If before market open (9:30 AM ET): Show today (if trading day)
+    - If during market hours: Show today
+    - If after market close (4:00 PM ET): Show next trading day
+    - If weekend/holiday: Show next trading day
     
     Args:
-        as_of_date: Optional date to calculate from. Defaults to today.
+        as_of_date: Optional datetime to calculate from. Defaults to current time.
     
     Returns:
-        Date string for next trading day in YYYY-MM-DD format
+        Date string for the appropriate trading day in YYYY-MM-DD format
     """
-    if as_of_date is None:
-        as_of_date = datetime.now()
-    elif isinstance(as_of_date, str):
-        as_of_date = datetime.strptime(as_of_date, '%Y-%m-%d')
+    # Get current time in Eastern Time if pytz is available
+    if HAS_PYTZ:
+        ny_tz = pytz.timezone('America/New_York')
+        now_ny = datetime.now(ny_tz)
+        current_date = now_ny.date()
+        current_time = now_ny.time()
+    else:
+        # Fallback to system time (assume Eastern Time for simplicity)
+        now = datetime.now()
+        current_date = now.date()
+        current_time = now.time()
+    
+    # Market hours: 9:30 AM to 4:00 PM ET
+    market_open = datetime.strptime("09:30:00", "%H:%M:%S").time()
+    market_close = datetime.strptime("16:00:00", "%H:%M:%S").time()
+    
+    # Determine if we're before market open
+    is_before_market_open = current_time < market_open
+    is_after_market_close = current_time > market_close
     
     # Use enhanced trading calendar if available
     if HAS_TRADING_CALENDAR:
-        # Normalize to date only
-        as_of_date = pd.Timestamp(as_of_date).normalize()
+        # Normalize to date only for pandas
+        base_date = pd.Timestamp(current_date)
         
         # NYSE holiday calendar (includes major US market holidays)
         nyse_calendar = USFederalHolidayCalendar()
         trading_day = CustomBusinessDay(calendar=nyse_calendar)
         
-        # Get next trading day
-        next_day = as_of_date + trading_day
-        return next_day.strftime('%Y-%m-%d')
+        # Check if today is a trading day
+        is_trading_day = base_date in pd.date_range(start=base_date, periods=1, freq=trading_day)
+        
+        # Apply market hours logic
+        if is_before_market_open and is_trading_day:
+            # Before market open on a trading day -> show today
+            result_date = base_date
+        elif is_after_market_close or not is_trading_day:
+            # After market close OR not a trading day -> next trading day
+            result_date = base_date + trading_day
+        else:
+            # During market hours -> show today
+            result_date = base_date
+        
+        return result_date.strftime('%Y-%m-%d')
     else:
         # Fallback to simple weekend skipping
-        next_day = as_of_date + timedelta(days=1)
+        result_date = datetime(current_date.year, current_date.month, current_date.day)
         
-        # Skip weekends
-        while next_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            next_day += timedelta(days=1)
-        
-        return next_day.strftime('%Y-%m-%d')
+        if is_before_market_open:
+            # Before market open - check if today is weekday
+            if result_date.weekday() < 5:
+                return result_date.strftime('%Y-%m-%d')
+            else:
+                # Weekend - find next weekday
+                while result_date.weekday() >= 5:
+                    result_date += timedelta(days=1)
+                return result_date.strftime('%Y-%m-%d')
+        else:
+            # After market close - get tomorrow and skip weekends
+            result_date += timedelta(days=1)
+            while result_date.weekday() >= 5:
+                result_date += timedelta(days=1)
+            return result_date.strftime('%Y-%m-%d')
 
 
 def render_info_box(message: str, box_type: str = "info"):

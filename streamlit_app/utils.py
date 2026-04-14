@@ -43,6 +43,14 @@ LOCAL_ETF_METADATA = {
     'N/A': {'name': 'Not Available', 'sector': 'Unknown'},
 }
 
+# Try to import pandas trading calendar support
+try:
+    from pandas.tseries.holiday import USFederalHolidayCalendar
+    from pandas.tseries.offsets import CustomBusinessDay
+    HAS_TRADING_CALENDAR = True
+except ImportError:
+    HAS_TRADING_CALENDAR = False
+
 def set_page_config():
     """Configure Streamlit page settings."""
     st.set_page_config(
@@ -204,21 +212,43 @@ def format_date(date_str: str) -> str:
         return date_str
 
 
-def calculate_next_trading_day() -> str:
+def calculate_next_trading_day(as_of_date=None):
     """
-    Calculate the next US trading day.
-
+    Calculate the next US stock market trading day (NYSE calendar).
+    Accounts for weekends AND US federal holidays when pandas is available.
+    
+    Args:
+        as_of_date: Optional date to calculate from. Defaults to today.
+    
     Returns:
-        Date string for next trading day
+        Date string for next trading day in YYYY-MM-DD format
     """
-    today = datetime.now()
-    next_day = today + timedelta(days=1)
-
-    # Skip weekends
-    while next_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
-        next_day += timedelta(days=1)
-
-    return next_day.strftime('%Y-%m-%d')
+    if as_of_date is None:
+        as_of_date = datetime.now()
+    elif isinstance(as_of_date, str):
+        as_of_date = datetime.strptime(as_of_date, '%Y-%m-%d')
+    
+    # Use enhanced trading calendar if available
+    if HAS_TRADING_CALENDAR:
+        # Normalize to date only
+        as_of_date = pd.Timestamp(as_of_date).normalize()
+        
+        # NYSE holiday calendar (includes major US market holidays)
+        nyse_calendar = USFederalHolidayCalendar()
+        trading_day = CustomBusinessDay(calendar=nyse_calendar)
+        
+        # Get next trading day
+        next_day = as_of_date + trading_day
+        return next_day.strftime('%Y-%m-%d')
+    else:
+        # Fallback to simple weekend skipping
+        next_day = as_of_date + timedelta(days=1)
+        
+        # Skip weekends
+        while next_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            next_day += timedelta(days=1)
+        
+        return next_day.strftime('%Y-%m-%d')
 
 
 def render_info_box(message: str, box_type: str = "info"):

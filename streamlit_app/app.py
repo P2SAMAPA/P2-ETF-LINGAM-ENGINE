@@ -16,7 +16,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from streamlit_app.utils import apply_custom_css, get_etf_display_name
+from streamlit_app.utils import apply_custom_css, get_etf_display_name, calculate_next_trading_day
 
 # ==============================================================================
 # Constants
@@ -130,7 +130,10 @@ def render_prediction_card(data):
         st.info("No prediction available. Run training with --upload.")
         return
 
-    # Hero section
+    # Calculate next trading day for display
+    next_trading_day = calculate_next_trading_day()
+
+    # Hero section with next trading day instead of prediction date
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
                 border-radius: 16px; padding: 20px 24px; border: 1px solid #d8b4fe; margin-bottom: 20px;">
@@ -151,7 +154,9 @@ def render_prediction_card(data):
                 <span style="font-size: 14px;"><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</span>
             </div>
             <div style="display: flex; gap: 8px;">
-                <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px; font-size:12px;">{data['prediction_date']}</span>
+                <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px; font-size:12px;">
+                    🗓️ Next Trading Day: {next_trading_day}
+                </span>
                 <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px; font-size:12px;">{data['training_mode']}</span>
             </div>
         </div>

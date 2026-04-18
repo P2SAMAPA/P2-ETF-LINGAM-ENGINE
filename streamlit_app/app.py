@@ -2,9 +2,7 @@
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
 Displays fixed-split and consensus predictions using existing metrics.
-First metric shows Annualized Return (from metrics_annualized_return column).
 """
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -15,18 +13,26 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import config
-from streamlit_app.utils import apply_custom_css, get_etf_display_name, calculate_next_trading_day
+from streamlit_app.utils import (
+    apply_custom_css,
+    get_etf_display_name,
+    calculate_next_trading_day,
+)
 
 # ==============================================================================
 # Constants
 # ==============================================================================
+
 HF_DATASET_REPO = "P2SAMAPA/p2-etf-lingam-results"
 PREDICTIONS_FILE = "predictions.parquet"
+
 
 # ==============================================================================
 # Data loading & parsing
 # ==============================================================================
+
 @st.cache_data(ttl=3600)
 def load_predictions() -> pd.DataFrame:
     url = f"https://huggingface.co/datasets/{HF_DATASET_REPO}/resolve/main/{PREDICTIONS_FILE}"
@@ -40,6 +46,7 @@ def load_predictions() -> pd.DataFrame:
     except Exception as e:
         st.error(f"Failed to load predictions: {e}")
         return pd.DataFrame()
+
 
 def parse_followers(followers_str):
     if pd.isna(followers_str) or not followers_str:
@@ -57,6 +64,7 @@ def parse_followers(followers_str):
     except:
         pass
     return []
+
 
 def extract_prediction(row):
     """Convert a row into a prediction dict using existing columns."""
@@ -83,38 +91,82 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
+    # Extract predicted return (already stored in the 'return' column)
+    predicted_return = row.get('return', 0.0)
+    if pd.isna(predicted_return):
+        predicted_return = 0.0
+
     return {
         'leader': leader,
         'leader_name': get_etf_display_name(leader),
-        'conviction': row.get('causal_confidence', 0.0),
+        'predicted_return': predicted_return,
         'top_3_picks': top_3_picks,
-        'prediction_date': row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
+        'prediction_date': (
+            row['date'].strftime('%Y-%m-%d')
+            if hasattr(row['date'], 'strftime')
+            else str(row['date'])
+        ),
         'training_mode': row.get('training_mode', 'fixed'),
         'metrics': metrics,
-        'benchmark': config.FI_COMMODITY_BENCHMARK if row.get('universe') == 'fi_commodity' else config.EQUITY_BENCHMARK,
+        'benchmark': (
+            config.FI_COMMODITY_BENCHMARK
+            if row.get('universe') == 'fi_commodity'
+            else config.EQUITY_BENCHMARK
+        ),
     }
+
 
 # ==============================================================================
 # Rendering functions
 # ==============================================================================
+
 def render_kpi_boxes(metrics: dict):
     """Render 5 KPI boxes with equal height and centered content."""
     col1, col2, col3, col4, col5 = st.columns(5, gap="small")
     kpis = [
-        (col1, "Ann. Return", f"{metrics.get('annualized_return', 0)*100:.1f}%", "#10B981" if metrics.get('annualized_return',0)>=0 else "#EF4444"),
-        (col2, "Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", "#6B7280"),
-        (col3, "Max Drawdown", f"{metrics.get('max_drawdown', 0)*100:.1f}%", "#EF4444"),
-        (col4, "Win Rate", f"{metrics.get('win_rate', 0)*100:.1f}%", "#10B981"),
-        (col5, "Best Day", f"{metrics.get('best_day', 0)*100:.1f}%", "#10B981"),
+        (
+            col1,
+            "Ann. Return",
+            f"{metrics.get('annualized_return', 0)*100:.1f}%",
+            "#10B981" if metrics.get('annualized_return', 0) >= 0 else "#EF4444",
+        ),
+        (
+            col2,
+            "Sharpe Ratio",
+            f"{metrics.get('sharpe_ratio', 0):.2f}",
+            "#6B7280",
+        ),
+        (
+            col3,
+            "Max Drawdown",
+            f"{metrics.get('max_drawdown', 0)*100:.1f}%",
+            "#EF4444",
+        ),
+        (
+            col4,
+            "Win Rate",
+            f"{metrics.get('win_rate', 0)*100:.1f}%",
+            "#10B981",
+        ),
+        (
+            col5,
+            "Best Day",
+            f"{metrics.get('best_day', 0)*100:.1f}%",
+            "#10B981",
+        ),
     ]
     for col, label, value, color in kpis:
         with col:
-            st.markdown(f"""
-            <div style="background: white; border-radius: 12px; padding: 12px 4px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05); height: 90px; display: flex; flex-direction: column; justify-content: center;">
-                <div style="font-size: 20px; font-weight: 700; color: {color}; line-height: 1.2;">{value}</div>
-                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 8px;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style="text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 600; color: {color};">{value}</div>
+                    <div style="font-size: 0.8rem; color: #6B7280;">{label}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
 
 def render_signal_history_table(signals):
     """Placeholder for signal history."""
@@ -123,6 +175,7 @@ def render_signal_history_table(signals):
         return
     df = pd.DataFrame(signals)
     st.dataframe(df, use_container_width=True)
+
 
 def render_prediction_card(data):
     """Render a single prediction card with hero section and KPI boxes."""
@@ -133,58 +186,57 @@ def render_prediction_card(data):
     # Calculate next trading day for display
     next_trading_day = calculate_next_trading_day()
 
-    # Hero section with next trading day instead of prediction date
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
-                border-radius: 16px; padding: 20px 24px; border: 1px solid #d8b4fe; margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-                <h2 style="font-size: 48px; color: #6B21A8; margin: 0;">{data['leader']}</h2>
-                <p style="margin: 4px 0 0 0; color: #6b7280;">{data['leader_name']}</p>
+    # Hero section with predicted return instead of conviction
+    st.markdown(
+        f"""
+        <div style="background-color: #F8F9FA; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+            <div style="font-size: 0.9rem; color: #6B7280; margin-bottom: 0.25rem;">Signal for {next_trading_day}</div>
+            <div style="display: flex; align-items: baseline; gap: 0.5rem;">
+                <span style="font-size: 3rem; font-weight: 700;">{data['leader']}</span>
+                <span style="font-size: 1.2rem; color: #6B7280;">{data['leader_name']}</span>
             </div>
-            <div style="text-align: right;">
-                <p style="font-size: 12px; color: #6b7280; margin: 0;">Conviction</p>
-                <p style="font-size: 32px; font-weight: 600; color: #6B21A8; margin: 0;">{data['conviction']*100:.1f}%</p>
+            <div style="font-size: 1.5rem; font-weight: 600; color: #059669; margin-top: 0.5rem;">
+                Predicted Return: {data['predicted_return']*100:.2f}%
             </div>
-        </div>
-        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #d8b4fe; display: flex; justify-content: space-between; flex-wrap: wrap;">
-            <div>
-                <span style="font-size: 14px;"><strong>2nd:</strong> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</span>
-                &nbsp;&nbsp;
-                <span style="font-size: 14px;"><strong>3rd:</strong> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</span>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <div><span style="color: #6B7280;">2nd:</span> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</div>
+                <div><span style="color: #6B7280;">3rd:</span> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</div>
             </div>
-            <div style="display: flex; gap: 8px;">
-                <span style="background:#6B21A8; color:white; padding:4px 12px; border-radius:20px; font-size:12px;">
-                    🗓️ Next Trading Day: {next_trading_day}
-                </span>
-                <span style="background:#f3e8ff; color:#6B21A8; padding:4px 12px; border-radius:20px; font-size:12px;">{data['training_mode']}</span>
+            <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                <div><span style="color: #6B7280;">🗓️ Next Trading Day:</span> {next_trading_day}</div>
+                <div><span style="background-color: #E5E7EB; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem;">{data['training_mode']}</span></div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
     # KPI boxes
     render_kpi_boxes(data['metrics'])
 
+
 # ==============================================================================
 # Main app
 # ==============================================================================
+
 def main():
     st.set_page_config(page_title="P2 — ETF LINGAM Engine", layout="wide")
     apply_custom_css()
-    st.title("📊 P2 — ETF LINGAM Engine")
+
+    st.title("🔮 P2 — ETF LINGAM Engine")
 
     with st.sidebar:
-        if st.button("Refresh Data"):
+        if st.button("🔄 Refresh Data"):
             st.cache_data.clear()
             st.rerun()
-        df = load_predictions()
-        if not df.empty:
-            st.success(f"Loaded {len(df)} predictions")
-            summary = df.groupby(['universe', 'training_mode']).size().reset_index(name='count')
-            st.write("Available predictions:", summary)
-        else:
-            st.error("No data loaded. Run training with --upload.")
+
+    df = load_predictions()
+    if not df.empty:
+        st.success(f"Loaded {len(df)} predictions")
+        summary = df.groupby(['universe', 'training_mode']).size().reset_index(name='count')
+        st.write("Available predictions:", summary)
+    else:
+        st.error("No data loaded. Run training with --upload.")
 
     if df.empty:
         st.stop()
@@ -208,15 +260,16 @@ def main():
 
             col_fixed, col_shrink = st.columns(2)
             with col_fixed:
-                st.markdown("#### 🔹 Fixed Split Training")
+                st.markdown("#### Fixed Split Training")
                 render_prediction_card(fixed_data)
             with col_shrink:
-                st.markdown("#### 🔸 Shrinking Window (Consensus)")
+                st.markdown("#### Shrinking Window (Consensus)")
                 render_prediction_card(shrink_data)
 
             st.markdown("---")
             st.markdown("#### Signal History")
             render_signal_history_table([])
+
 
 if __name__ == "__main__":
     main()

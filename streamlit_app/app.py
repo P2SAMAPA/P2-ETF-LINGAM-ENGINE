@@ -91,7 +91,6 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
-    # Extract predicted return (already stored in the 'return' column)
     predicted_return = row.get('return', 0.0)
     if pd.isna(predicted_return):
         predicted_return = 0.0
@@ -183,10 +182,8 @@ def render_prediction_card(data):
         st.info("No prediction available. Run training with --upload.")
         return
 
-    # Calculate next trading day for display
     next_trading_day = calculate_next_trading_day()
 
-    # Hero section with predicted return instead of conviction
     st.markdown(
         f"""
         <div style="background-color: #F8F9FA; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
@@ -211,7 +208,6 @@ def render_prediction_card(data):
         unsafe_allow_html=True,
     )
 
-    # KPI boxes
     render_kpi_boxes(data['metrics'])
 
 
@@ -231,14 +227,8 @@ def main():
             st.rerun()
 
     df = load_predictions()
-    if not df.empty:
-        st.success(f"Loaded {len(df)} predictions")
-        summary = df.groupby(['universe', 'training_mode']).size().reset_index(name='count')
-        st.write("Available predictions:", summary)
-    else:
-        st.error("No data loaded. Run training with --upload.")
-
     if df.empty:
+        st.error("No prediction data available. Please run training with --upload.")
         st.stop()
 
     tabs = st.tabs(["Fixed Income / Alts", "Equity Sectors"])

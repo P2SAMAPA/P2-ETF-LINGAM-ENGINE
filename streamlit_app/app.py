@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
-Displays fixed-split and consensus predictions.
+Displays fixed-split and consensus predictions with clear metric separation.
 """
 import streamlit as st
 import pandas as pd
@@ -67,18 +67,25 @@ def parse_followers(followers_str):
 
 
 def extract_prediction(row):
-    """Convert a row into a prediction dict using existing columns."""
+    """Convert a row into a prediction dict with separated metrics."""
     followers = parse_followers(row.get('followers', '[]'))
-    top_3_picks = []
+    
+    # Build top picks with their causal centrality scores
+    top_picks = []
     for item in followers[:3]:
         if isinstance(item, (list, tuple)) and len(item) >= 2:
-            top_3_picks.append({'ticker': str(item[0]), 'score': float(item[1])})
-    while len(top_3_picks) < 3:
-        top_3_picks.append({'ticker': 'N/A', 'score': 0.0})
+            ticker = str(item[0])
+            causal_score = float(item[1])
+        else:
+            ticker = 'N/A'
+            causal_score = 0.0
+        top_picks.append({'ticker': ticker, 'causal_score': causal_score})
+    while len(top_picks) < 3:
+        top_picks.append({'ticker': 'N/A', 'causal_score': 0.0})
 
     leader = row.get('predicted_leader_etf', 'N/A')
     if pd.isna(leader) or str(leader).strip() in ('', 'N/A'):
-        leader = top_3_picks[0]['ticker'] if top_3_picks[0]['ticker'] != 'N/A' else 'N/A'
+        leader = top_picks[0]['ticker'] if top_picks[0]['ticker'] != 'N/A' else 'N/A'
 
     metrics = {
         'annualized_return': row.get('metrics_annualized_return', 0.0),
@@ -91,7 +98,7 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
-    # Use the 'return' field if present and non‑zero; otherwise fallback to annualized test return
+    # Predicted return for the leader (from OOS test period)
     predicted_return = row.get('return', 0.0)
     if pd.isna(predicted_return) or predicted_return == 0.0:
         predicted_return = metrics['annualized_return']
@@ -100,7 +107,7 @@ def extract_prediction(row):
         'leader': leader,
         'leader_name': get_etf_display_name(leader),
         'predicted_return': predicted_return,
-        'top_3_picks': top_3_picks,
+        'top_picks': top_picks,  # now includes causal scores
         'prediction_date': (
             row['date'].strftime('%Y-%m-%d')
             if hasattr(row['date'], 'strftime')
@@ -169,12 +176,18 @@ def render_kpi_boxes(metrics: dict):
 
 
 def render_prediction_card(data):
-    """Render a single prediction card with hero section and KPI boxes."""
+    """Render a single prediction card with clear separation of return and causal scores."""
     if data is None:
         st.info("No prediction available. Run training with --upload.")
         return
 
     next_trading_day = calculate_next_trading_day()
+
+    # Build display strings for 2nd and 3rd picks (causal centrality scores)
+    second_pick = data['top_picks'][1]
+    third_pick = data['top_picks'][2]
+    second_str = f"{second_pick['ticker']} (causal: {second_pick['causal_score']*100:.1f}%)" if second_pick['ticker'] != 'N/A' else "N/A"
+    third_str = f"{third_pick['ticker']} (causal: {third_pick['causal_score']*100:.1f}%)" if third_pick['ticker'] != 'N/A' else "N/A"
 
     st.markdown(
         f"""
@@ -187,9 +200,9 @@ def render_prediction_card(data):
             <div style="font-size: 1.5rem; font-weight: 600; color: #059669; margin-top: 0.5rem;">
                 Predicted Return: {data['predicted_return']*100:.2f}%
             </div>
-            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                <div><span style="color: #6B7280;">2nd:</span> {data['top_3_picks'][1]['ticker']} ({data['top_3_picks'][1]['score']*100:.1f}%)</div>
-                <div><span style="color: #6B7280;">3rd:</span> {data['top_3_picks'][2]['ticker']} ({data['top_3_picks'][2]['score']*100:.1f}%)</div>
+            <div style="display: flex; gap: 1.5rem; margin-top: 1rem;">
+                <div><span style="color: #6B7280;">2nd (causal follower):</span> {second_str}</div>
+                <div><span style="color: #6B7280;">3rd (causal follower):</span> {third_str}</div>
             </div>
             <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
                 <div><span style="color: #6B7280;">🗓️ Next Trading Day:</span> {next_trading_day}</div>
@@ -201,6 +214,13 @@ def render_prediction_card(data):
     )
 
     render_kpi_boxes(data['metrics'])
+
+    # Explanatory caption
+    st.caption(
+        "**Selection Logic:** The ETF with the highest out‑of‑sample annualized return "
+        "is chosen as the predicted leader. The 2nd and 3rd ETFs are ranked by their "
+        "causal centrality scores—how strongly the leader influences them in the learned causal graph."
+    )
 
 
 # ==============================================================================

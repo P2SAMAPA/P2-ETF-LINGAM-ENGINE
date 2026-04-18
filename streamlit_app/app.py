@@ -1,7 +1,7 @@
 """
 P2-ETF-LINGAM-Engine Streamlit Dashboard
 ========================================
-Displays fixed-split and consensus predictions using existing metrics.
+Displays fixed-split and consensus predictions.
 """
 import streamlit as st
 import pandas as pd
@@ -91,9 +91,10 @@ def extract_prediction(row):
         if pd.isna(metrics[k]):
             metrics[k] = 0.0
 
+    # Use the 'return' field if present and non‑zero; otherwise fallback to annualized test return
     predicted_return = row.get('return', 0.0)
-    if pd.isna(predicted_return):
-        predicted_return = 0.0
+    if pd.isna(predicted_return) or predicted_return == 0.0:
+        predicted_return = metrics['annualized_return']
 
     return {
         'leader': leader,
@@ -165,15 +166,6 @@ def render_kpi_boxes(metrics: dict):
                 """,
                 unsafe_allow_html=True,
             )
-
-
-def render_signal_history_table(signals):
-    """Placeholder for signal history."""
-    if not signals:
-        st.info("Historical signals not yet stored. Extend training script to save `signal_history`.")
-        return
-    df = pd.DataFrame(signals)
-    st.dataframe(df, use_container_width=True)
 
 
 def render_prediction_card(data):
@@ -255,10 +247,6 @@ def main():
             with col_shrink:
                 st.markdown("#### Shrinking Window (Consensus)")
                 render_prediction_card(shrink_data)
-
-            st.markdown("---")
-            st.markdown("#### Signal History")
-            render_signal_history_table([])
 
 
 if __name__ == "__main__":

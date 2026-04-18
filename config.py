@@ -56,6 +56,9 @@ EQUITY_ASSETS = [
     "XLU",   # Utilities Select Sector SPDR
     "XME",   # Metallurgical Mining Company
     "IWM",   # iShares Russell 2000 ETF (Small Cap)
+    "IWF",
+    "XSD",
+    "XBI",
     "XLB",   # Materials Select Sector SPDR
     "XLRE",  # Real Estate Select Sector SPDR
     "GDX",   # VanEck Gold Miners
